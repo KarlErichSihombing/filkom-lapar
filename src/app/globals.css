@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme inLine{
+  /* 4 based color */
+  --color-primary: #f05A22;
+  --color-secondary: #134E39;
+  --color-tertiary: #0094D7;
+  --color-neutral: #88726C;
+
+  /* Variants */
+  --color-primary-strong: #b33a00;
+  --color-primary-container: #ffdbd0;
+  --color-secondary-soft: #2f6b52;
+  --color-secondary-container: #b5f0d0;
+  --color-tertiary-strong: #00658f;
+  --color-tertiary-container: #cde5ff;
+  --color-inverted: #3b2f2c;
+  --color-error: #ba1a1a;
+
+  /* surface and text */
+  --color-background: #fff8f6;
+  --color-surface: #ffede8;
+  --color-surface-variant: #ffe1d9;
+  --color-outline: #85736e;
+  --color-on-surface: #231917;
+  --color-on-surface-muted: #5a4540;
+  --color-on-primary: #ffffff;
+
+  /* font */
+  --font-headline: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-label: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+
+  /* Shape */
+  --radius-card: 1.5rem;
+}
+
+@layer base {
+  body {
+    @apply bg-background font-body text-on-surface antialiased;
+  }
+  h1, 
+  h2,
+  h3 {
+    @apply font-headline;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary-strong);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    * {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
