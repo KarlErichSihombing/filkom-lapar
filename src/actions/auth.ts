@@ -25,6 +25,9 @@ export async function login(
     password,
   });
   if (error || !data.user) {
+    if (error?.code === "user_banned") {
+      return { error: "Akun ini dinonaktifkan. Hubungi admin kantin." };
+    }
     return { error: "Email atau kata sandi salah." };
   }
 
