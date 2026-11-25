@@ -1,6 +1,4 @@
-import { fetchSellerOrders } from "@/actions/order";
 import { MenuManager } from "@/components/seller/MenuManager";
-import { SellerOrderManager } from "@/components/seller/SellerOrderManager";
 import { StandBanner } from "@/components/seller/StandBanner";
 import { getSellerContext } from "@/lib/seller";
 import { createClient } from "@/lib/supabase/server";
@@ -30,15 +28,12 @@ export default async function DashboardPage() {
   const toko = ctx.toko;
 
   const supabase = await createClient();
-  const [{ data, error }, orders] = await Promise.all([
-    supabase
-      .from("menu")
-      .select("id, nama_menu, deskripsi, harga, kategori, foto_url, tersedia")
-      .eq("toko_id", toko.id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false }),
-    fetchSellerOrders(),
-  ]);
+  const { data, error } = await supabase
+    .from("menu")
+    .select("id, nama_menu, deskripsi, harga, kategori, foto_url, tersedia")
+    .eq("toko_id", toko.id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
 
   if (error) {
     return (
@@ -67,12 +62,6 @@ export default async function DashboardPage() {
         noStand={toko.noStand}
         fotoUrl={toko.fotoUrl}
         buka={toko.buka}
-      />
-      <SellerOrderManager
-        tokoId={toko.id}
-        namaToko={toko.namaToko}
-        noStand={toko.noStand}
-        initialOrders={orders}
       />
       <MenuManager tokoId={toko.id} items={items} rating={toko.ratingRataRata} />
     </>
