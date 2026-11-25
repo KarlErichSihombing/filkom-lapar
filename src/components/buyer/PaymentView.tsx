@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
+import { batalkanPembayaranPembeli } from "@/actions/order";
 import { segarkanPembayaran, simulasiBayar } from "@/actions/payment";
 import { QrCodeVisual } from "@/components/buyer/QrCodeVisual";
 import { CancelCountdown } from "@/components/pembeli/CancelCountdown";
@@ -34,6 +35,7 @@ export type PesananCardView = {
   noStand: number | null;
   totalHarga: number;
   statusPesanan: StatusPesanan;
+  alasanPembatalan?: string | null;
   createdAt: string;
   items: PembayaranItemView[];
 };
@@ -78,6 +80,7 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
   const [info, setInfo] = useState<string | null>(null);
   const [simPending, startSimTransition] = useTransition();
   const [checkPending, startCheckTransition] = useTransition();
+  const [cancelPending, startCancelTransition] = useTransition();
 
   // Hitung mundur batas waktu pembayaran 15 menit
   useEffect(() => {
@@ -131,11 +134,24 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
           filter: `pembayaran_id=eq.${pembayaran.id}`,
         },
         (payload) => {
-          const row = payload.new as { id?: string; status_pesanan?: StatusPesanan };
+          const row = payload.new as {
+            id?: string;
+            status_pesanan?: StatusPesanan;
+            alasan_pembatalan?: string | null;
+          };
           if (!row.id || !row.status_pesanan) return;
           setPesananList((prev) =>
             prev.map((p) =>
-              p.id === row.id ? { ...p, statusPesanan: row.status_pesanan! } : p,
+              p.id === row.id
+                ? {
+                    ...p,
+                    statusPesanan: row.status_pesanan!,
+                    alasanPembatalan:
+                      row.alasan_pembatalan === undefined
+                        ? p.alasanPembatalan
+                        : row.alasan_pembatalan,
+                  }
+                : p,
             ),
           );
         },
@@ -180,6 +196,28 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
     setError(null);
     startCheckTransition(async () => {
       await segarkanPembayaran(pembayaran.id);
+    });
+  }
+
+  function handleCancelPayment(reason: string) {
+    setError(null);
+    setInfo(null);
+    startCancelTransition(async () => {
+      const res = await batalkanPembayaranPembeli(pembayaran.id, reason);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setPesananList((prev) =>
+        prev.map((p) =>
+          p.statusPesanan === "dibayar"
+            ? { ...p, statusPesanan: "dibatalkan", alasanPembatalan: reason }
+            : p,
+        ),
+      );
+      setInfo(
+        "Pesanan berhasil dibatalkan (≤ 10 detik). Saldo stand telah dipotong otomatis dan dana dikembalikan ke Saldo Toko Anda.",
+      );
     });
   }
 
@@ -254,18 +292,34 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
             </div>
           </div>
 
-          {isPaid && waktuBayar && (
-            <div className="mt-4">
-              <CancelCountdown
-                paidAt={waktuBayar}
-                windowSeconds={10}
-                onCancel={() => {
-                  setInfo(
-                    "Pemotongan saldo toko & mutasi pembatalan 10 detik akan diaktifkan pada Tahap 6.",
-                  );
-                }}
-              />
-            </div>
+          {isPaid &&
+            waktuBayar &&
+            pesananList.some((p) => p.statusPesanan === "dibayar") && (
+              <div className="mt-4">
+                <CancelCountdown
+                  paidAt={waktuBayar}
+                  windowSeconds={10}
+                  disabled={cancelPending}
+                  onCancel={handleCancelPayment}
+                />
+              </div>
+            )}
+
+          {error && isPaid && (
+            <p
+              role="alert"
+              className="mt-3 rounded-2xl bg-error/10 px-4 py-3 text-xs font-medium text-error"
+            >
+              {error}
+            </p>
+          )}
+          {info && isPaid && (
+            <p
+              role="status"
+              className="mt-3 rounded-2xl bg-secondary-container px-4 py-3 text-xs font-medium text-secondary"
+            >
+              {info}
+            </p>
           )}
         </section>
 
@@ -318,6 +372,12 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
                     {rupiah(p.totalHarga)}
                   </span>
                 </div>
+                {p.statusPesanan === "dibatalkan" && (
+                  <p className="mt-2.5 rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
+                    Dibatalkan ({p.alasanPembatalan || "Permintaan pembatalan"}) · Refund{" "}
+                    {rupiah(p.totalHarga)} tercatat ke mutasi saldo.
+                  </p>
+                )}
               </section>
             );
           })}

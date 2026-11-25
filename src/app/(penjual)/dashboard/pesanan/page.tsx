@@ -1,4 +1,4 @@
-import { fetchSellerOrders } from "@/actions/order";
+import { fetchSellerBalanceInfo, fetchSellerOrders } from "@/actions/order";
 import { SellerOrderManager } from "@/components/seller/SellerOrderManager";
 import { StandBanner } from "@/components/seller/StandBanner";
 import { getSellerContext } from "@/lib/seller";
@@ -16,7 +16,10 @@ export default async function SellerPesananPage() {
   }
 
   const toko = ctx.toko;
-  const orders = await fetchSellerOrders();
+  const [orders, balanceInfo] = await Promise.all([
+    fetchSellerOrders(),
+    fetchSellerBalanceInfo(),
+  ]);
 
   return (
     <>
@@ -32,6 +35,7 @@ export default async function SellerPesananPage() {
         namaToko={toko.namaToko}
         noStand={toko.noStand}
         initialOrders={orders}
+        initialBalance={balanceInfo}
       />
     </>
   );

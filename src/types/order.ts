@@ -55,6 +55,36 @@ export type PesananSummary = {
   totalHarga: number;
   statusPesanan: StatusPesanan;
   alasanPembatalan: string | null;
+  waktuBayar: string | null;
   createdAt: string;
   items: DetailPesananItem[];
+};
+
+export type JenisMutasiSaldo =
+  | "pembayaran_masuk"
+  | "pembatalan_pembeli"
+  | "pembatalan_penjual";
+
+export type MutasiSaldoItem = {
+  id: string;
+  jenis: JenisMutasiSaldo;
+  nominal: number;
+  saldoSebelum: number;
+  saldoSesudah: number;
+  keterangan: string;
+  createdAt: string;
+};
+
+export type SellerBalanceInfo = {
+  saldoToko: number;
+  totalMasuk: number;
+  totalPotongan: number;
+  mutasi: MutasiSaldoItem[];
+};
+
+export type BuyerSaldoTokoItem = {
+  tokoId: string;
+  namaToko: string;
+  noStand: number | null;
+  saldo: number;
 };

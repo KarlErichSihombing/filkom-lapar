@@ -1,9 +1,11 @@
+import { fetchBuyerSaldoToko } from "@/actions/order";
 import { BuyerOrdersView } from "@/components/buyer/BuyerOrdersView";
 import { getBuyerContext } from "@/lib/buyer";
 import { createClient } from "@/lib/supabase/server";
 import type { PesananSummary, StatusPesanan } from "@/types/order";
 
 type TokoRel = { id: string; nama_toko: string; no_stand: number };
+type PembayaranRel = { waktu_bayar: string | null };
 type DetailRow = {
   menu_id: string;
   nama_menu: string;
@@ -22,18 +24,23 @@ type PesananRow = {
   alasan_pembatalan: string | null;
   created_at: string;
   toko: TokoRel | TokoRel[] | null;
+  pembayaran: PembayaranRel | PembayaranRel[] | null;
   detail_pesanan: DetailRow[];
 };
 
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 
 export default async function PesananPage() {
-  const [ctx, supabase] = await Promise.all([getBuyerContext(), createClient()]);
+  const [ctx, supabase, saldoTokoList] = await Promise.all([
+    getBuyerContext(),
+    createClient(),
+    fetchBuyerSaldoToko(),
+  ]);
 
   const { data, error } = await supabase
     .from("pesanan")
     .select(
-      "id, kode, toko_id, pembayaran_id, total_harga, status_pesanan, alasan_pembatalan, created_at, toko(id, nama_toko, no_stand), detail_pesanan(menu_id, nama_menu, jumlah, harga_satuan, subtotal, catatan)",
+      "id, kode, toko_id, pembayaran_id, total_harga, status_pesanan, alasan_pembatalan, created_at, toko(id, nama_toko, no_stand), pembayaran(waktu_bayar), detail_pesanan(menu_id, nama_menu, jumlah, harga_satuan, subtotal, catatan)",
     )
     .order("created_at", { ascending: false });
 
@@ -49,6 +56,7 @@ export default async function PesananPage() {
   const rows = (data ?? []) as unknown as PesananRow[];
   const initialOrders: PesananSummary[] = rows.map((p) => {
     const toko = one(p.toko);
+    const bayar = one(p.pembayaran);
     return {
       id: p.id,
       kode: p.kode,
@@ -59,6 +67,7 @@ export default async function PesananPage() {
       totalHarga: Number(p.total_harga),
       statusPesanan: p.status_pesanan,
       alasanPembatalan: p.alasan_pembatalan,
+      waktuBayar: bayar?.waktu_bayar ?? null,
       createdAt: p.created_at,
       items: p.detail_pesanan.map((d) => ({
         menuId: d.menu_id,
@@ -71,5 +80,11 @@ export default async function PesananPage() {
     };
   });
 
-  return <BuyerOrdersView userId={ctx.userId} initialOrders={initialOrders} />;
+  return (
+    <BuyerOrdersView
+      userId={ctx.userId}
+      initialOrders={initialOrders}
+      initialSaldoToko={saldoTokoList}
+    />
+  );
 }

@@ -1,24 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CircleCheck, Clock, Receipt, ShoppingBag } from "@/components/ui/icons";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { batalkanPesananPembeli, fetchBuyerSaldoToko } from "@/actions/order";
+import { CancelCountdown } from "@/components/pembeli/CancelCountdown";
+import { ArrowRight, CircleCheck, CircleX, Clock, Receipt, ShoppingBag, Store } from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import {
   STATUS_PESANAN_BADGE,
   STATUS_PESANAN_LABEL,
+  type BuyerSaldoTokoItem,
   type PesananSummary,
   type StatusPesanan,
 } from "@/types/order";
 
-type BuyerTab = "semua" | "berjalan" | "siap_diambil" | "selesai";
+type BuyerTab = "semua" | "berjalan" | "siap_diambil" | "selesai" | "dibatalkan";
 
 const TABS: { value: BuyerTab; label: string }[] = [
   { value: "semua", label: "Semua" },
   { value: "berjalan", label: "Sedang Berjalan" },
   { value: "siap_diambil", label: "Siap Diambil" },
   { value: "selesai", label: "Selesai" },
+  { value: "dibatalkan", label: "Dibatalkan" },
 ];
 
 const TIMELINE_STEPS: { key: StatusPesanan; label: string; desc: string }[] = [
@@ -46,20 +50,27 @@ function formatDateTime(iso: string) {
 export function BuyerOrdersView({
   userId,
   initialOrders,
+  initialSaldoToko = [],
 }: {
   userId: string;
   initialOrders: PesananSummary[];
+  initialSaldoToko?: BuyerSaldoTokoItem[];
 }) {
   const [orders, setOrders] = useState<PesananSummary[]>(initialOrders);
+  const [saldoToko, setSaldoToko] = useState<BuyerSaldoTokoItem[]>(initialSaldoToko);
   const [tab, setTab] = useState<BuyerTab>("semua");
+  const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
+  const [feedbackByOrder, setFeedbackByOrder] = useState<
+    Record<string, { type: "ok" | "error"; text: string }>
+  >({});
+  const [, startTransition] = useTransition();
   const [notifPerm, setNotifPerm] = useState<string>(() =>
     typeof window !== "undefined" && "Notification" in window
       ? Notification.permission
       : "unsupported",
   );
 
-  // Langganan Supabase Realtime agar saat penjual menekan tombol di HP penjual,
-  // status pesanan di HP pembeli langsung berubah tanpa refresh halaman.
+  // Langganan Supabase Realtime agar perubahan status pesanan & pembatalan langsung tampil
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -93,6 +104,9 @@ export function BuyerOrdersView({
                 : o,
             ),
           );
+          if (row.status_pesanan === "dibatalkan") {
+            void fetchBuyerSaldoToko().then(setSaldoToko).catch(() => null);
+          }
         },
       )
       .subscribe();
@@ -101,6 +115,45 @@ export function BuyerOrdersView({
       supabase.removeChannel(channel);
     };
   }, [userId]);
+
+  function handleCancelOrder(orderId: string, reason: string) {
+    setCancelPendingId(orderId);
+    setFeedbackByOrder((prev) => {
+      const next = { ...prev };
+      delete next[orderId];
+      return next;
+    });
+
+    startTransition(async () => {
+      const res = await batalkanPesananPembeli(orderId, reason);
+      setCancelPendingId(null);
+
+      if (res.error) {
+        setFeedbackByOrder((prev) => ({
+          ...prev,
+          [orderId]: { type: "error", text: res.error! },
+        }));
+        return;
+      }
+
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? { ...o, statusPesanan: "dibatalkan", alasanPembatalan: reason }
+            : o,
+        ),
+      );
+      setFeedbackByOrder((prev) => ({
+        ...prev,
+        [orderId]: {
+          type: "ok",
+          text: "Pesanan berhasil dibatalkan (≤ 10 detik). Saldo stand dipotong otomatis & dana masuk ke Saldo Toko Anda.",
+        },
+      }));
+      const freshSaldo = await fetchBuyerSaldoToko().catch(() => null);
+      if (freshSaldo) setSaldoToko(freshSaldo);
+    });
+  }
 
   async function requestBrowserNotif() {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -114,11 +167,13 @@ export function BuyerOrdersView({
     ).length;
     const siap = orders.filter((o) => o.statusPesanan === "siap_diambil").length;
     const selesai = orders.filter((o) => o.statusPesanan === "selesai").length;
+    const dibatalkan = orders.filter((o) => o.statusPesanan === "dibatalkan").length;
     return {
       semua: orders.length,
       berjalan,
       siap_diambil: siap,
       selesai,
+      dibatalkan,
     };
   }, [orders]);
 
@@ -131,6 +186,11 @@ export function BuyerOrdersView({
     }
     return orders.filter((o) => o.statusPesanan === tab);
   }, [orders, tab]);
+
+  const totalSaldoRefund = useMemo(
+    () => saldoToko.reduce((acc, s) => acc + s.saldo, 0),
+    [saldoToko],
+  );
 
   if (orders.length === 0) {
     return (
@@ -172,6 +232,41 @@ export function BuyerOrdersView({
           </button>
         )}
       </div>
+
+      {/* Kartu Saldo Refund / Kredit Toko milik Pembeli */}
+      {totalSaldoRefund > 0 && (
+        <section className="rounded-3xl bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-2xl bg-secondary-container text-secondary">
+                <Store className="size-5" />
+              </span>
+              <div>
+                <p className="font-label text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                  Saldo Toko Pembeli (Refund Pembatalan)
+                </p>
+                <p className="font-headline text-2xl font-bold text-on-surface">
+                  {rupiah(totalSaldoRefund)}
+                </p>
+              </div>
+            </div>
+            <ul className="flex flex-wrap gap-2">
+              {saldoToko.map((s) => (
+                <li
+                  key={s.tokoId}
+                  className="rounded-2xl bg-surface px-3.5 py-2 text-xs"
+                >
+                  <span className="font-medium">
+                    {s.noStand !== null ? `Stand ${pad2(s.noStand)} · ` : ""}
+                    {s.namaToko}:
+                  </span>{" "}
+                  <strong className="font-label text-primary-strong">{rupiah(s.saldo)}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       {/* Filter tab */}
       <div
@@ -217,6 +312,7 @@ export function BuyerOrdersView({
           {visible.map((p) => {
             const status = p.statusPesanan;
             const stepIdx = timelineIndex(status);
+            const fb = feedbackByOrder[p.id];
 
             return (
               <li
@@ -264,6 +360,50 @@ export function BuyerOrdersView({
                       ! Tunjukkan kode <strong>#{p.kode}</strong> ke penjual.
                     </span>
                   </div>
+                )}
+
+                {/* Banner info saat pesanan Dibatalkan */}
+                {status === "dibatalkan" && (
+                  <div
+                    role="status"
+                    className="mt-4 flex items-start gap-3 rounded-2xl bg-error/10 px-4 py-3 text-xs text-error"
+                  >
+                    <CircleX className="mt-0.5 size-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">
+                        Pesanan Dibatalkan · Alasan: {p.alasanPembatalan || "Permintaan pembatalan"}
+                      </p>
+                      <p className="mt-0.5 opacity-90">
+                        Dana sebesar <strong>{rupiah(p.totalHarga)}</strong> telah dikembalikan ke
+                        Saldo Toko Anda dan saldo stand penjual telah dipotong otomatis.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Countdown Pembatalan 10 Detik (saat baru dibayar & belum diproses penjual) */}
+                {status === "dibayar" && p.waktuBayar && (
+                  <div className="mt-4">
+                    <CancelCountdown
+                      paidAt={p.waktuBayar}
+                      windowSeconds={10}
+                      disabled={cancelPendingId === p.id}
+                      onCancel={(reason) => handleCancelOrder(p.id, reason)}
+                    />
+                  </div>
+                )}
+
+                {fb && (
+                  <p
+                    role="alert"
+                    className={`mt-3 rounded-2xl px-4 py-2.5 text-xs font-medium ${
+                      fb.type === "error"
+                        ? "bg-error/10 text-error"
+                        : "bg-secondary-container text-secondary"
+                    }`}
+                  >
+                    {fb.text}
+                  </p>
                 )}
 
                 {/* Linimasa progres pesanan 4 tahap (Diterima -> Diproses -> Siap Diambil -> Selesai) */}

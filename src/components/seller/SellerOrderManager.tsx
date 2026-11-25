@@ -2,21 +2,40 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
+  batalkanPesananPenjual,
+  fetchSellerBalanceInfo,
   fetchSellerOrders,
   ubahStatusPesanan,
   type SellerOrderCard,
 } from "@/actions/order";
 import { Button } from "@/components/ui/Button";
-import { CircleCheck, Clock, Receipt, ShoppingBag, Utensils, X } from "@/components/ui/icons";
+import {
+  CircleCheck,
+  CircleX,
+  Clock,
+  Receipt,
+  ShoppingBag,
+  Store,
+  Utensils,
+  X,
+} from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import {
   STATUS_PESANAN_BADGE,
   STATUS_PESANAN_LABEL,
+  type SellerBalanceInfo,
   type StatusPesanan,
 } from "@/types/order";
 
-type FilterTab = "aktif" | "dibayar" | "diproses" | "siap_diambil" | "selesai" | "semua";
+type FilterTab =
+  | "aktif"
+  | "dibayar"
+  | "diproses"
+  | "siap_diambil"
+  | "selesai"
+  | "dibatalkan"
+  | "semua";
 
 const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: "aktif", label: "Perlu Diproses" },
@@ -24,6 +43,7 @@ const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: "diproses", label: "Diproses" },
   { value: "siap_diambil", label: "Siap Diambil" },
   { value: "selesai", label: "Selesai" },
+  { value: "dibatalkan", label: "Dibatalkan" },
   { value: "semua", label: "Semua" },
 ];
 
@@ -49,7 +69,6 @@ function formatTime(iso: string) {
   }).format(new Date(iso));
 }
 
-/** Bunyi notifikasi singkat menggunakan Web Audio API (tanpa file audio eksternal). */
 function playAlertChime() {
   try {
     const AudioCtx =
@@ -60,8 +79,8 @@ function playAlertChime() {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.14); // A5
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.14);
     gain.gain.setValueAtTime(0.18, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
     osc.connect(gain);
@@ -87,14 +106,19 @@ function triggerBrowserNotification(title: string, body: string) {
 function OrderCard({
   order,
   onStatusChanged,
+  onCancelled,
 }: {
   order: SellerOrderCard;
   onStatusChanged: (id: string, next: StatusPesanan) => void;
+  onCancelled: (id: string, reason: string) => void;
 }) {
   const [pending, startTransition] = useTransition();
+  const [showCancelBox, setShowCancelBox] = useState(false);
+  const [cancelReason, setCancelReason] = useState("Stok menu habis");
   const [error, setError] = useState<string | null>(null);
 
   const currentIdx = stepIndex(order.statusPesanan);
+  const canSellerCancel = ["dibayar", "diproses", "siap_diambil"].includes(order.statusPesanan);
 
   function advance(nextStatus: StatusPesanan) {
     const prevStatus = order.statusPesanan;
@@ -107,6 +131,19 @@ function OrderCard({
         onStatusChanged(order.id, prevStatus);
         setError(res.error);
       }
+    });
+  }
+
+  function handleSellerCancel() {
+    setError(null);
+    startTransition(async () => {
+      const res = await batalkanPesananPenjual(order.id, cancelReason);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setShowCancelBox(false);
+      onCancelled(order.id, cancelReason);
     });
   }
 
@@ -168,6 +205,20 @@ function OrderCard({
           </div>
         )}
 
+        {order.statusPesanan === "dibatalkan" && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-2xl bg-error/10 px-3.5 py-2.5 text-xs text-error">
+            <CircleX className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="font-semibold">
+                Alasan Batal: {order.alasanPembatalan || "Dibatalkan"}
+              </p>
+              <p className="mt-0.5 opacity-90">
+                Saldo stand telah dipotong otomatis sebesar {rupiah(order.totalHarga)}.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Daftar item menu & catatan */}
         <ul className="mt-4 divide-y divide-surface text-sm">
           {order.items.map((item) => (
@@ -207,7 +258,7 @@ function OrderCard({
           </p>
         )}
 
-        <div className="mt-3">
+        <div className="mt-3 space-y-2">
           {order.statusPesanan === "dibayar" && (
             <Button
               className="w-full py-3"
@@ -242,6 +293,63 @@ function OrderCard({
             </Button>
           )}
 
+          {canSellerCancel && !showCancelBox && (
+            <button
+              type="button"
+              onClick={() => setShowCancelBox(true)}
+              disabled={pending}
+              className="w-full rounded-full py-1.5 text-center font-label text-xs font-medium text-error transition-colors hover:bg-error/10"
+            >
+              Batalkan Pesanan (Stok Habis / Kendala)
+            </button>
+          )}
+
+          {canSellerCancel && showCancelBox && (
+            <div className="rounded-2xl bg-surface p-3">
+              <p className="font-label text-[11px] font-semibold text-on-surface">
+                Alasan pembatalan penjual (refund otomatis):
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {["Stok menu habis", "Bahan baku habis", "Stand tutup mendadak"].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setCancelReason(r)}
+                    className={`rounded-full px-2.5 py-1 font-label text-[10px] font-medium ${
+                      cancelReason === r
+                        ? "bg-error text-on-primary"
+                        : "bg-white text-on-surface-muted"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2.5 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setShowCancelBox(false)}
+                  disabled={pending}
+                >
+                  Kembali
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleSellerCancel}
+                  disabled={pending}
+                >
+                  {pending ? "Membatalkan..." : "Konfirmasi Batal"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {order.statusPesanan === "selesai" && (
             <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary-container/70 py-2.5 font-label text-xs font-semibold text-secondary">
               <CircleCheck className="size-4" /> Pesanan telah selesai diserahkan
@@ -253,18 +361,29 @@ function OrderCard({
   );
 }
 
+const DEFAULT_BALANCE: SellerBalanceInfo = {
+  saldoToko: 0,
+  totalMasuk: 0,
+  totalPotongan: 0,
+  mutasi: [],
+};
+
 export function SellerOrderManager({
   tokoId,
   namaToko,
   noStand,
   initialOrders,
+  initialBalance = DEFAULT_BALANCE,
 }: {
   tokoId: string;
   namaToko: string;
   noStand: number;
   initialOrders: SellerOrderCard[];
+  initialBalance?: SellerBalanceInfo;
 }) {
   const [orders, setOrders] = useState<SellerOrderCard[]>(initialOrders);
+  const [balance, setBalance] = useState<SellerBalanceInfo>(initialBalance);
+  const [showMutasi, setShowMutasi] = useState(true);
   const [tab, setTab] = useState<FilterTab>("aktif");
   const [alertBanner, setAlertBanner] = useState<string | null>(null);
   const [notifPerm, setNotifPerm] = useState<string>(() =>
@@ -273,16 +392,20 @@ export function SellerOrderManager({
       : "unsupported",
   );
 
-  const reloadOrders = useCallback(async () => {
+  const reloadAll = useCallback(async () => {
     try {
-      const fresh = await fetchSellerOrders();
-      setOrders(fresh);
+      const [freshOrders, freshBalance] = await Promise.all([
+        fetchSellerOrders(),
+        fetchSellerBalanceInfo(),
+      ]);
+      setOrders(freshOrders);
+      setBalance(freshBalance);
     } catch {
       /* pertahankan state yang ada */
     }
   }, []);
 
-  // Langganan Supabase Realtime pada tabel pesanan untuk stand ini
+  // Langganan Supabase Realtime pada tabel pesanan & mutasi_saldo untuk stand ini
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -300,6 +423,7 @@ export function SellerOrderManager({
             id?: string;
             kode?: string;
             status_pesanan?: StatusPesanan;
+            alasan_pembatalan?: string | null;
             total_harga?: number | string;
           };
           const oldRow = payload.old as { status_pesanan?: StatusPesanan } | undefined;
@@ -312,29 +436,59 @@ export function SellerOrderManager({
             return;
           }
 
-          // Deteksi pesanan yang baru saja dibayar
           const isNewlyPaid =
             row.status_pesanan === "dibayar" &&
             (payload.eventType === "INSERT" || oldRow?.status_pesanan !== "dibayar");
 
+          const isNewlyCancelled =
+            row.status_pesanan === "dibatalkan" &&
+            oldRow?.status_pesanan !== "dibatalkan";
+
           if (isNewlyPaid) {
             const msg = `Pesanan baru masuk #${row.kode ?? ""} (${rupiah(
               Number(row.total_harga ?? 0),
-            )})!`;
+            )})! Saldo stand bertambah.`;
             setAlertBanner(msg);
             playAlertChime();
             triggerBrowserNotification(`Pesanan Baru · ${namaToko}`, msg);
+          } else if (isNewlyCancelled) {
+            const msg = `Pesanan #${row.kode ?? ""} dibatalkan (${
+              row.alasan_pembatalan ?? "Refund otomatis"
+            }). Saldo stand telah disesuaikan.`;
+            setAlertBanner(msg);
+            playAlertChime();
+            triggerBrowserNotification(`Pesanan Dibatalkan · ${namaToko}`, msg);
           }
 
-          // Perbarui status lokal secara instan dan muat detail item terbaru
           setOrders((prev) => {
             const exists = prev.some((o) => o.id === row.id);
             if (!exists) return prev;
             return prev.map((o) =>
-              o.id === row.id ? { ...o, statusPesanan: row.status_pesanan! } : o,
+              o.id === row.id
+                ? {
+                    ...o,
+                    statusPesanan: row.status_pesanan!,
+                    alasanPembatalan:
+                      row.alasan_pembatalan === undefined
+                        ? o.alasanPembatalan
+                        : row.alasan_pembatalan,
+                  }
+                : o,
             );
           });
-          void reloadOrders();
+          void reloadAll();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mutasi_saldo",
+          filter: `toko_id=eq.${tokoId}`,
+        },
+        () => {
+          void fetchSellerBalanceInfo().then(setBalance).catch(() => null);
         },
       )
       .subscribe();
@@ -342,13 +496,27 @@ export function SellerOrderManager({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tokoId, namaToko, reloadOrders]);
+  }, [tokoId, namaToko, reloadAll]);
 
   const handleStatusChanged = useCallback((id: string, next: StatusPesanan) => {
     setOrders((prev) =>
       prev.map((o) => (o.id === id ? { ...o, statusPesanan: next } : o)),
     );
   }, []);
+
+  const handleOrderCancelled = useCallback(
+    (id: string, reason: string) => {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id
+            ? { ...o, statusPesanan: "dibatalkan", alasanPembatalan: reason }
+            : o,
+        ),
+      );
+      void reloadAll();
+    },
+    [reloadAll],
+  );
 
   async function enableBrowserNotif() {
     if (typeof window === "undefined" || !("Notification" in window)) return;
@@ -361,12 +529,14 @@ export function SellerOrderManager({
     const diproses = orders.filter((o) => o.statusPesanan === "diproses").length;
     const siap = orders.filter((o) => o.statusPesanan === "siap_diambil").length;
     const selesai = orders.filter((o) => o.statusPesanan === "selesai").length;
+    const dibatalkan = orders.filter((o) => o.statusPesanan === "dibatalkan").length;
     return {
       aktif: dibayar + diproses + siap,
       dibayar,
       diproses,
       siap_diambil: siap,
       selesai,
+      dibatalkan,
       semua: orders.length,
     };
   }, [orders]);
@@ -395,7 +565,7 @@ export function SellerOrderManager({
           <button
             type="button"
             onClick={() => setAlertBanner(null)}
-            aria-label="Tutup notifikasi pesanan baru"
+            aria-label="Tutup notifikasi"
             className="grid size-7 shrink-0 place-items-center rounded-full bg-white/15 hover:bg-white/25"
           >
             <X className="size-4" />
@@ -403,6 +573,93 @@ export function SellerOrderManager({
         </div>
       )}
 
+      {/* Panel Saldo Toko & Riwayat Mutasi Saldo Real-Time (Tahap 6) */}
+      <div className="rounded-3xl bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-11 place-items-center rounded-2xl bg-secondary-container text-secondary">
+              <Store className="size-5" />
+            </span>
+            <div>
+              <p className="font-label text-[10px] uppercase tracking-wider text-on-surface-muted">
+                Saldo Aktif Stand · Real-Time Credit Adjustment
+              </p>
+              <p className="font-headline text-3xl font-bold text-primary-strong">
+                {rupiah(balance.saldoToko)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-2xl bg-secondary-container/60 px-3.5 py-2 text-xs">
+              <span className="block font-label text-[10px] text-secondary">Total Dana Masuk</span>
+              <strong className="font-label text-sm text-secondary">
+                +{rupiah(balance.totalMasuk)}
+              </strong>
+            </div>
+            <div className="rounded-2xl bg-error/10 px-3.5 py-2 text-xs">
+              <span className="block font-label text-[10px] text-error">
+                Potongan Pembatalan
+              </span>
+              <strong className="font-label text-sm text-error">
+                -{rupiah(balance.totalPotongan)}
+              </strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMutasi((v) => !v)}
+              className="rounded-full bg-surface px-4 py-2 font-label text-xs font-medium text-on-surface-muted hover:bg-surface-variant"
+            >
+              {showMutasi ? "Sembunyikan Mutasi" : `Riwayat Mutasi (${balance.mutasi.length})`}
+            </button>
+          </div>
+        </div>
+
+        {showMutasi && (
+          <div className="mt-4 border-t border-surface pt-4">
+            <p className="font-label text-xs font-semibold text-on-surface-muted">
+              Riwayat Mutasi Saldo Stand ({balance.mutasi.length})
+            </p>
+            {balance.mutasi.length === 0 ? (
+              <p className="mt-2 rounded-2xl bg-surface px-4 py-4 text-xs text-on-surface-muted">
+                Belum ada mutasi saldo. Mutasi otomatis tercatat saat pesanan dibayar (+) atau
+                dibatalkan (-).
+              </p>
+            ) : (
+              <ul className="mt-2.5 max-h-56 divide-y divide-surface overflow-y-auto rounded-2xl bg-surface px-4 py-1 text-xs">
+                {balance.mutasi.map((m) => {
+                  const isCredit = m.nominal >= 0;
+                  return (
+                    <li
+                      key={m.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-on-surface">{m.keterangan}</p>
+                        <p className="mt-0.5 text-[11px] text-on-surface-muted">
+                          {formatTime(m.createdAt)} · Saldo: {rupiah(m.saldoSebelum)} →{" "}
+                          <strong>{rupiah(m.saldoSesudah)}</strong>
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 font-label text-xs font-bold tabular-nums ${
+                          isCredit
+                            ? "bg-secondary-container text-secondary"
+                            : "bg-error/15 text-error"
+                        }`}
+                      >
+                        {isCredit ? `+${rupiah(m.nominal)}` : `-${rupiah(Math.abs(m.nominal))}`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Daftar Pesanan Masuk */}
       <div className="rounded-3xl bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -428,7 +685,7 @@ export function SellerOrderManager({
             )}
             <button
               type="button"
-              onClick={() => void reloadOrders()}
+              onClick={() => void reloadAll()}
               className="rounded-full bg-surface px-3.5 py-2 font-label text-xs font-medium text-on-surface-muted hover:bg-surface-variant"
             >
               Segarkan
@@ -437,10 +694,10 @@ export function SellerOrderManager({
         </div>
 
         {/* Ringkasan cepat antrean */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <div className="rounded-2xl bg-primary-container/60 p-3.5">
             <p className="font-label text-[11px] font-medium text-primary-strong">
-              Baru Masuk (Dibayar)
+              Baru Masuk
             </p>
             <p className="mt-1 font-headline text-2xl font-bold text-primary-strong">
               {counts.dibayar}
@@ -448,7 +705,7 @@ export function SellerOrderManager({
           </div>
           <div className="rounded-2xl bg-tertiary-container/60 p-3.5">
             <p className="font-label text-[11px] font-medium text-tertiary-strong">
-              Sedang Diproses
+              Diproses
             </p>
             <p className="mt-1 font-headline text-2xl font-bold text-tertiary-strong">
               {counts.diproses}
@@ -468,6 +725,14 @@ export function SellerOrderManager({
             </p>
             <p className="mt-1 font-headline text-2xl font-bold text-on-surface">
               {counts.selesai}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-error/10 p-3.5">
+            <p className="font-label text-[11px] font-medium text-error">
+              Dibatalkan
+            </p>
+            <p className="mt-1 font-headline text-2xl font-bold text-error">
+              {counts.dibatalkan}
             </p>
           </div>
         </div>
@@ -524,6 +789,7 @@ export function SellerOrderManager({
                 key={order.id}
                 order={order}
                 onStatusChanged={handleStatusChanged}
+                onCancelled={handleOrderCancelled}
               />
             ))}
           </ul>
