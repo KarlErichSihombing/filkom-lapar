@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BuyerNav } from "@/components/buyer/BuyerNav";
+import { OrderStatusNotifier } from "@/components/buyer/OrderStatusNotifier";
 import { LogoutButton } from "@/components/LogoutButton";
 
 function initialsOf(name: string) {
@@ -15,14 +16,17 @@ function initialsOf(name: string) {
 }
 
 export function BuyerShell({
+  userId,
   nama,
   children,
 }: {
+  userId: string;
   nama: string;
   children: ReactNode;
 }) {
   return (
     <div className="min-h-dvh pb-28">
+      <OrderStatusNotifier userId={userId} />
       <header className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <Link
           href="/beranda"

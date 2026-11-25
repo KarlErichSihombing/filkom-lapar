@@ -60,13 +60,17 @@ export default async function PembayaranPage({
   if (!payRes.data) notFound();
 
   const pembayaran = payRes.data;
-  const qrInfo = pembayaran.token_payment
-    ? {
+  const needsQr =
+    !pembayaran.token_payment ||
+    (pembayaran.xendit_qr_id?.startsWith("qr_sim_") && pembayaran.status_pembayaran === "menunggu");
+  const qrInfo = needsQr
+    ? await ensurePembayaranQr(pembayaran.id)
+    : {
         qrString: pembayaran.token_payment,
         qrId: pembayaran.xendit_qr_id,
         externalId: pembayaran.external_id ?? pembayaran.id,
-      }
-    : await ensurePembayaranQr(pembayaran.id);
+        xenditError: undefined,
+      };
 
   const pesananRows = (orderRes.data ?? []) as unknown as PesananRow[];
   const initialPesanan: PesananCardView[] = pesananRows.map((p) => {
@@ -111,6 +115,7 @@ export default async function PembayaranPage({
           qrString: qrInfo.qrString ?? pembayaran.id,
           expiresAt: pembayaran.expires_at,
           waktuBayar: pembayaran.waktu_bayar,
+          xenditError: qrInfo.xenditError,
         }}
         initialPesanan={initialPesanan}
       />

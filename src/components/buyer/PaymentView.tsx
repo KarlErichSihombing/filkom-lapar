@@ -49,6 +49,7 @@ type Props = {
     qrString: string;
     expiresAt: string;
     waktuBayar: string | null;
+    xenditError?: string;
   };
   initialPesanan: PesananCardView[];
 };
@@ -168,7 +169,9 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
       setInfo(
         res.xenditSimulated
           ? "Simulasi Xendit berhasil dikirim & pembayaran terverifikasi otomatis."
-          : "Simulasi pembayaran berhasil. Status pesanan kini Dibayar.",
+          : res.xenditNotice
+            ? `Pembayaran lokal berhasil (${res.xenditNotice}).`
+            : "Simulasi pembayaran berhasil. Status pesanan kini Dibayar.",
       );
     });
   }
@@ -327,10 +330,24 @@ export function PaymentView({ pembayaran, initialPesanan }: Props) {
             <QrCode className="size-5 text-primary-strong" />
             <h2 className="text-lg font-semibold">Metode QRIS</h2>
           </div>
-          <span className="rounded-full bg-surface px-2.5 py-0.5 font-label text-[10px] font-medium text-on-surface-muted">
-            Xendit QRIS
+          <span
+            className={`rounded-full px-2.5 py-0.5 font-label text-[10px] font-medium ${
+              pembayaran.xenditQrId && !pembayaran.xenditQrId.startsWith("qr_sim_")
+                ? "bg-secondary-container text-secondary"
+                : "bg-surface text-on-surface-muted"
+            }`}
+          >
+            {pembayaran.xenditQrId && !pembayaran.xenditQrId.startsWith("qr_sim_")
+              ? "Xendit Live/Test"
+              : "Mode Simulasi"}
           </span>
         </div>
+
+        {pembayaran.xenditError && !isPaid && (
+          <p className="mt-3 rounded-2xl bg-primary-container/60 px-3.5 py-2.5 text-[11px] text-primary-strong">
+            Catatan Xendit: {pembayaran.xenditError}
+          </p>
+        )}
 
         {!isPaid ? (
           <>

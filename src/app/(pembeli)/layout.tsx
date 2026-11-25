@@ -16,7 +16,9 @@ export default async function PembeliLayout({
 
   return (
     <CartProvider initialLines={initialLines}>
-      <BuyerShell nama={ctx.nama}>{children}</BuyerShell>
+      <BuyerShell userId={ctx.userId} nama={ctx.nama}>
+        {children}
+      </BuyerShell>
     </CartProvider>
   );
 }

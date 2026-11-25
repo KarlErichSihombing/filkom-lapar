@@ -5,6 +5,7 @@ export type XenditQrResult = {
   referenceId: string;
   qrString: string;
   isSimulatedFallback: boolean;
+  errorMessage?: string;
 };
 
 type CreateQrParams = {
@@ -45,6 +46,7 @@ export async function createXenditDynamicQr({
       referenceId: pembayaranId,
       qrString: buildFallbackQrString(pembayaranId, nominal),
       isSimulatedFallback: true,
+      errorMessage: "XENDIT_SECRET_KEY belum diatur di environment server.",
     };
   }
 
@@ -55,46 +57,63 @@ export async function createXenditDynamicQr({
       ? expDate.toISOString()
       : new Date(Date.now() + 15 * 60_000).toISOString();
 
-  const res = await fetch("https://api.xendit.co/qr_codes", {
-    method: "POST",
-    headers: {
-      Authorization: basicAuthHeader(secretKey),
-      "api-version": "2022-07-31",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      reference_id: pembayaranId,
-      type: "DYNAMIC",
-      currency: "IDR",
-      amount: nominal,
-      expires_at: safeExpiresAt,
-    }),
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch("https://api.xendit.co/qr_codes", {
+      method: "POST",
+      headers: {
+        Authorization: basicAuthHeader(secretKey),
+        "api-version": "2022-07-31",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        reference_id: pembayaranId,
+        type: "DYNAMIC",
+        currency: "IDR",
+        amount: nominal,
+        expires_at: safeExpiresAt,
+      }),
+      cache: "no-store",
+    });
 
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    console.warn("[Xendit] Gagal membuat QR via API, menggunakan fallback simulasi:", res.status, errBody);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.warn(
+        "[Xendit] Gagal membuat QR via API, menggunakan fallback simulasi:",
+        res.status,
+        errBody,
+      );
+      return {
+        qrId: `qr_sim_${pembayaranId.replace(/-/g, "").slice(0, 16)}`,
+        referenceId: pembayaranId,
+        qrString: buildFallbackQrString(pembayaranId, nominal),
+        isSimulatedFallback: true,
+        errorMessage: `Xendit HTTP ${res.status}: ${errBody || "Gagal membuat QR"}`,
+      };
+    }
+
+    const data = (await res.json()) as {
+      id: string;
+      reference_id?: string;
+      qr_string: string;
+    };
+
+    return {
+      qrId: data.id,
+      referenceId: data.reference_id ?? pembayaranId,
+      qrString: data.qr_string,
+      isSimulatedFallback: false,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal menghubungi Xendit";
+    console.warn("[Xendit] Error koneksi saat membuat QR:", msg);
     return {
       qrId: `qr_sim_${pembayaranId.replace(/-/g, "").slice(0, 16)}`,
       referenceId: pembayaranId,
       qrString: buildFallbackQrString(pembayaranId, nominal),
       isSimulatedFallback: true,
+      errorMessage: msg,
     };
   }
-
-  const data = (await res.json()) as {
-    id: string;
-    reference_id?: string;
-    qr_string: string;
-  };
-
-  return {
-    qrId: data.id,
-    referenceId: data.reference_id ?? pembayaranId,
-    qrString: data.qr_string,
-    isSimulatedFallback: false,
-  };
 }
 
 /**

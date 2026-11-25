@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
 import { useStandStatus } from "@/components/seller/StandStatus";
 import { BarChart, MapPin, ShoppingBag, Utensils } from "@/components/ui/icons";
 import { pad2 } from "@/lib/format";
 import type { SellerContext } from "@/lib/seller";
+import { createClient } from "@/lib/supabase/client";
 
 function initialsOf(name: string) {
   return (
@@ -26,12 +28,53 @@ export function SellerShell({
   ctx: SellerContext;
   children: ReactNode;
 }) {
+  const pathname = usePathname();
   const toko = ctx.toko;
   const { buka } = useStandStatus(toko?.buka ?? true);
   const displayName = ctx.nama || "Penjual";
+  const [activeOrderCount, setActiveOrderCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!toko) return;
+    const supabase = createClient();
+
+    async function loadActiveCount() {
+      const { count } = await supabase
+        .from("pesanan")
+        .select("id", { count: "exact", head: true })
+        .eq("toko_id", toko!.id)
+        .in("status_pesanan", ["dibayar", "diproses", "siap_diambil"]);
+      if (typeof count === "number") setActiveOrderCount(count);
+    }
+
+    void loadActiveCount();
+
+    const channel = supabase
+      .channel(`seller-nav-${toko.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pesanan",
+          filter: `toko_id=eq.${toko.id}`,
+        },
+        () => {
+          void loadActiveCount();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [toko]);
+
+  const onMenuPage = pathname === "/dashboard";
+  const onPesananPage = pathname.startsWith("/dashboard/pesanan");
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_1fr]">
+    <div className="min-h-dvh pb-24 lg:grid lg:grid-cols-[15rem_1fr] lg:pb-0">
       <aside className="hidden flex-col bg-surface p-4 lg:sticky lg:top-0 lg:flex lg:h-dvh">
         <div className="px-2 pt-2">
           <p className="font-headline text-xl font-bold leading-tight text-primary-strong">
@@ -65,28 +108,51 @@ export function SellerShell({
 
         <nav aria-label="Menu penjual" className="mt-6 space-y-1">
           <Link
+            href="/dashboard/pesanan"
+            aria-current={onPesananPage ? "page" : undefined}
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              onPesananPage
+                ? "bg-primary-strong text-on-primary"
+                : "text-on-surface-muted hover:bg-surface-variant"
+            }`}
+          >
+            <ShoppingBag className="size-4" />
+            <span>Pesanan masuk</span>
+            {activeOrderCount > 0 && (
+              <span
+                className={`ml-auto rounded-full px-2 py-0.5 font-label text-[11px] font-bold tabular-nums ${
+                  onPesananPage
+                    ? "bg-white text-primary-strong"
+                    : "bg-primary-strong text-on-primary"
+                }`}
+              >
+                {activeOrderCount}
+              </span>
+            )}
+          </Link>
+
+          <Link
             href="/dashboard"
-            aria-current="page"
-            className="flex items-center gap-3 rounded-xl bg-primary-strong px-3 py-2.5 text-sm font-medium text-on-primary"
+            aria-current={onMenuPage ? "page" : undefined}
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              onMenuPage
+                ? "bg-primary-strong text-on-primary"
+                : "text-on-surface-muted hover:bg-surface-variant"
+            }`}
           >
             <Utensils className="size-4" /> Kelola menu &amp; stok
           </Link>
-          {[
-            { label: "Pesanan masuk", icon: <ShoppingBag className="size-4" /> },
-            { label: "Laporan penjualan", icon: <BarChart className="size-4" /> },
-          ].map((item) => (
-            <span
-              key={item.label}
-              aria-disabled="true"
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-on-surface-muted opacity-70"
-            >
-              {item.icon}
-              {item.label}
-              <span className="ml-auto rounded-full bg-surface-variant px-2 py-0.5 font-label text-[10px]">
-                Segera
-              </span>
+
+          <span
+            aria-disabled="true"
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-on-surface-muted opacity-70"
+          >
+            <BarChart className="size-4" />
+            Laporan penjualan
+            <span className="ml-auto rounded-full bg-surface-variant px-2 py-0.5 font-label text-[10px]">
+              Segera
             </span>
-          ))}
+          </span>
         </nav>
       </aside>
 
@@ -121,6 +187,49 @@ export function SellerShell({
 
         <main className="space-y-4 px-4 pb-10 sm:px-6">{children}</main>
       </div>
+
+      {/* Navigasi bawah untuk penjual di layar HP (< lg) */}
+      <nav
+        aria-label="Navigasi penjual mobile"
+        className="fixed inset-x-0 bottom-4 z-20 mx-auto flex w-fit gap-1 rounded-full bg-surface p-1.5 shadow-lg shadow-primary/10 lg:hidden"
+      >
+        <Link
+          href="/dashboard/pesanan"
+          aria-current={onPesananPage ? "page" : undefined}
+          className={`flex items-center gap-2 rounded-full px-4 py-2.5 font-label text-xs font-medium transition-colors ${
+            onPesananPage
+              ? "bg-primary-strong text-on-primary"
+              : "text-on-surface-muted hover:bg-surface-variant"
+          }`}
+        >
+          <ShoppingBag className="size-4" />
+          <span>Pesanan Masuk</span>
+          {activeOrderCount > 0 && (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                onPesananPage
+                  ? "bg-white text-primary-strong"
+                  : "bg-primary-strong text-on-primary"
+              }`}
+            >
+              {activeOrderCount}
+            </span>
+          )}
+        </Link>
+
+        <Link
+          href="/dashboard"
+          aria-current={onMenuPage ? "page" : undefined}
+          className={`flex items-center gap-2 rounded-full px-4 py-2.5 font-label text-xs font-medium transition-colors ${
+            onMenuPage
+              ? "bg-primary-strong text-on-primary"
+              : "text-on-surface-muted hover:bg-surface-variant"
+          }`}
+        >
+          <Utensils className="size-4" />
+          <span>Menu &amp; Stok</span>
+        </Link>
+      </nav>
     </div>
   );
 }

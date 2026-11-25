@@ -10,6 +10,7 @@ export type PaymentActionResult = {
   error?: string;
   paidAt?: string;
   xenditSimulated?: boolean;
+  xenditNotice?: string;
 };
 
 /**
@@ -47,12 +48,16 @@ export async function simulasiBayar(pembayaranId: string): Promise<PaymentAction
 
   // Pastikan QR sudah dibuat terlebih dahulu
   const qrInfo = await ensurePembayaranQr(pembayaran.id);
-  const qrId = pembayaran.xendit_qr_id ?? qrInfo.qrId;
+  const qrId = qrInfo.qrId ?? pembayaran.xendit_qr_id;
 
   let xenditSimulated = false;
+  let xenditNotice: string | undefined = qrInfo.xenditError;
   if (qrId) {
     const sim = await triggerXenditQrSimulate(qrId, Number(pembayaran.total_bayar));
     xenditSimulated = sim.calledXendit && sim.xenditOk;
+    if (sim.calledXendit && !sim.xenditOk && sim.message) {
+      xenditNotice = `Simulasi Xendit gagal: ${sim.message}`;
+    }
   }
 
   const confirmed = await confirmPaymentInDb(pembayaran.id);
@@ -68,6 +73,7 @@ export async function simulasiBayar(pembayaranId: string): Promise<PaymentAction
     ok: true,
     paidAt: confirmed.paidAt,
     xenditSimulated,
+    xenditNotice,
   };
 }
 

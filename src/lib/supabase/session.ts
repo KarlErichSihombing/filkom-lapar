@@ -6,8 +6,9 @@ const PUBLIC_PATHS = ["/login", "/register"];
 
 /**
  * Menyegarkan sesi Supabase di setiap request dan menjaga akses halaman:
- * - belum login            -> /login
- * - sudah login, buka login -> beranda sesuai peran
+ * - halaman utama (/) selalu diarahkan ke /login
+ * - /login dan /register selalu bisa diakses (meski sudah ada sesi di tab lain)
+ * - belum login di halaman terproteksi -> /login
  * - tiap peran (pembeli / penjual / admin) hanya boleh di areanya sendiri
  */
 export async function updateSession(request: NextRequest) {
@@ -51,8 +52,18 @@ export async function updateSession(request: NextRequest) {
     return redirect;
   };
 
+  // Halaman utama (/) selalu mengarah ke halaman login
+  if (path === "/") {
+    return redirectTo("/login");
+  }
+
+  // Halaman publik (/login, /register) selalu ditampilkan tanpa mental ke dashboard
+  if (isPublic) {
+    return response;
+  }
+
   if (!user) {
-    return isPublic ? response : redirectTo("/login");
+    return redirectTo("/login");
   }
 
   const { data: profile } = await supabase
@@ -63,8 +74,6 @@ export async function updateSession(request: NextRequest) {
 
   const role = profile?.role ?? "pembeli";
   const home = homeForRole(role);
-
-  if (isPublic || path === "/") return redirectTo(home);
 
   // Setiap peran hanya boleh berada di areanya sendiri
   const inAdmin = path === "/admin" || path.startsWith("/admin/");

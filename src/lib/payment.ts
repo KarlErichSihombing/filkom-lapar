@@ -12,6 +12,7 @@ export async function ensurePembayaranQr(pembayaranId: string): Promise<{
   qrString: string | null;
   qrId: string | null;
   externalId: string | null;
+  xenditError?: string;
 }> {
   if (!UUID_RE.test(pembayaranId)) {
     return { qrString: null, qrId: null, externalId: null };
@@ -28,7 +29,13 @@ export async function ensurePembayaranQr(pembayaranId: string): Promise<{
     return { qrString: null, qrId: null, externalId: null };
   }
 
-  if (row.token_payment) {
+  // Jika sudah punya QR asli Xendit (bukan fallback qr_sim_), langsung kembalikan.
+  // Jika sebelumnya sempat tersimpan qr_sim_ karena XENDIT_SECRET_KEY belum dipasang,
+  // coba buat ulang jika sekarang XENDIT_SECRET_KEY sudah tersedia.
+  const hasSimFallback = row.xendit_qr_id?.startsWith("qr_sim_");
+  const canRetryXendit = Boolean(process.env.XENDIT_SECRET_KEY?.trim()) && hasSimFallback && row.status_pembayaran === "menunggu";
+
+  if (row.token_payment && !canRetryXendit) {
     return {
       qrString: row.token_payment,
       qrId: row.xendit_qr_id,
@@ -63,6 +70,7 @@ export async function ensurePembayaranQr(pembayaranId: string): Promise<{
     qrString: qr.qrString,
     qrId: qr.qrId,
     externalId: qr.referenceId,
+    xenditError: qr.errorMessage,
   };
 }
 
