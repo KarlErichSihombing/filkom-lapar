@@ -1,8 +1,11 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ImageIcon, Search, Star } from "@/components/ui/icons";
+import { useCart } from "@/components/buyer/CartProvider";
+import { QtyStepper } from "@/components/buyer/QtyStepper";
+import { ArrowRight, ImageIcon, Plus, Search, ShoppingBag, Star } from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { KATEGORI_LABEL, type Kategori, type MenuItem } from "@/types/menu";
@@ -14,6 +17,7 @@ type Props = {
     noStand: number;
     rating: number;
     buka: boolean;
+    fotoUrl?: string | null;
   };
   initialMenu: MenuItem[];
 };
@@ -40,6 +44,7 @@ const toItem = (r: MenuRow): MenuItem => ({
 });
 
 export function TokoMenuView({ toko, initialMenu }: Props) {
+  const cart = useCart();
   const [menu, setMenu] = useState(initialMenu);
   const [buka, setBuka] = useState(toko.buka);
   const [query, setQuery] = useState("");
@@ -192,51 +197,114 @@ export function TokoMenuView({ toko, initialMenu }: Props) {
         </p>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((m) => (
-            <li key={m.id} className="overflow-hidden rounded-3xl bg-white">
-              <div className="relative grid aspect-[4/3] place-items-center bg-surface text-outline">
-                {m.fotoUrl ? (
-                  <Image
-                    src={m.fotoUrl}
-                    alt={m.namaMenu}
-                    fill
-                    sizes="(min-width:1024px) 320px, (min-width:640px) 45vw, 100vw"
-                    className={`object-cover ${m.tersedia ? "" : "grayscale"}`}
-                  />
-                ) : (
-                  <ImageIcon className="size-10" />
-                )}
-                {!m.tersedia && (
-                  <span className="absolute left-3 top-3 rounded-full bg-error px-3 py-1 font-label text-xs font-medium text-on-primary">
-                    Habis
-                  </span>
-                )}
-              </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <h3
-                    className={`font-headline font-semibold leading-snug ${
-                      m.tersedia ? "" : "text-on-surface-muted"
-                    }`}
-                  >
-                    {m.namaMenu}
-                  </h3>
-                  <span className="shrink-0 rounded-full bg-surface px-2.5 py-0.5 font-label text-[10px] text-on-surface-muted">
-                    {KATEGORI_LABEL[m.kategori]}
-                  </span>
+          {visible.map((m) => {
+            const qty = cart.qtyOf(m.id);
+            const canOrder = buka && m.tersedia;
+
+            return (
+              <li key={m.id} className="flex flex-col overflow-hidden rounded-3xl bg-white">
+                <div className="relative grid aspect-[4/3] place-items-center bg-surface text-outline">
+                  {m.fotoUrl ? (
+                    <Image
+                      src={m.fotoUrl}
+                      alt={m.namaMenu}
+                      fill
+                      sizes="(min-width:1024px) 320px, (min-width:640px) 45vw, 100vw"
+                      className={`object-cover ${m.tersedia ? "" : "grayscale"}`}
+                    />
+                  ) : (
+                    <ImageIcon className="size-10" />
+                  )}
+                  {!m.tersedia && (
+                    <span className="absolute left-3 top-3 rounded-full bg-error px-3 py-1 font-label text-xs font-medium text-on-primary">
+                      Habis
+                    </span>
+                  )}
                 </div>
-                {m.deskripsi && (
-                  <p className="mt-1.5 line-clamp-2 text-xs text-on-surface-muted">
-                    {m.deskripsi}
-                  </p>
-                )}
-                <p className="mt-3 font-label text-base font-medium text-primary-strong">
-                  {rupiah(m.harga)}
-                </p>
-              </div>
-            </li>
-          ))}
+                <div className="flex flex-1 flex-col p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3
+                      className={`font-headline font-semibold leading-snug ${
+                        m.tersedia ? "" : "text-on-surface-muted"
+                      }`}
+                    >
+                      {m.namaMenu}
+                    </h3>
+                    <span className="shrink-0 rounded-full bg-surface px-2.5 py-0.5 font-label text-[10px] text-on-surface-muted">
+                      {KATEGORI_LABEL[m.kategori]}
+                    </span>
+                  </div>
+                  {m.deskripsi && (
+                    <p className="mt-1.5 line-clamp-2 text-xs text-on-surface-muted">
+                      {m.deskripsi}
+                    </p>
+                  )}
+                  <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+                    <p className="font-label text-base font-medium text-primary-strong">
+                      {rupiah(m.harga)}
+                    </p>
+                    {qty > 0 ? (
+                      <QtyStepper
+                        qty={qty}
+                        label={m.namaMenu}
+                        onMinus={() => cart.decrement(m.id)}
+                        onPlus={() => cart.increment(m.id)}
+                        plusDisabled={!canOrder}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canOrder}
+                        onClick={() =>
+                          cart.add({
+                            menuId: m.id,
+                            tokoId: toko.id,
+                            namaMenu: m.namaMenu,
+                            harga: m.harga,
+                            fotoUrl: m.fotoUrl,
+                            namaToko: toko.namaToko,
+                            noStand: toko.noStand,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-primary-strong px-4 py-2 font-label text-xs font-medium text-on-primary transition-colors hover:brightness-110 disabled:pointer-events-none disabled:bg-surface-variant disabled:text-on-surface-muted"
+                      >
+                        <Plus className="size-3.5" />
+                        Tambah
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {cart.itemCount > 0 && (
+        <div className="sticky bottom-20 z-10 mx-auto max-w-xl">
+          <Link
+            href="/keranjang"
+            className="flex items-center justify-between gap-4 rounded-full bg-primary-strong px-5 py-3.5 text-on-primary shadow-lg shadow-primary/20 transition-transform hover:scale-[1.01]"
+          >
+            <span className="flex items-center gap-3">
+              <span className="grid size-8 place-items-center rounded-full bg-white/15">
+                <ShoppingBag className="size-4" />
+              </span>
+              <span className="text-left">
+                <span className="block font-label text-xs font-semibold">
+                  {cart.itemCount} porsi · {cart.standCount} stand
+                </span>
+                <span className="block text-[11px] opacity-90">
+                  Bisa gabung menu dari stand lain
+                </span>
+              </span>
+            </span>
+            <span className="flex items-center gap-2 font-label text-sm font-semibold">
+              {rupiah(cart.total)}
+              <ArrowRight className="size-4" />
+            </span>
+          </Link>
+        </div>
       )}
     </>
   );

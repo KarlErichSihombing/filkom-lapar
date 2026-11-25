@@ -12,6 +12,7 @@ export type SellerContext = {
     namaToko: string;
     buka: boolean;
     ratingRataRata: number;
+    fotoUrl: string | null;
   } | null;
 };
 
@@ -32,7 +33,7 @@ export const getSellerContext = cache(async (): Promise<SellerContext> => {
 
   const { data: toko } = await supabase
     .from("toko")
-    .select("id, no_stand, nama_toko, buka, rating_rata_rata")
+    .select("id, no_stand, nama_toko, buka, rating_rata_rata, foto_url")
     .eq("penjual_id", user.id)
     .maybeSingle();
 
@@ -46,6 +47,7 @@ export const getSellerContext = cache(async (): Promise<SellerContext> => {
           namaToko: toko.nama_toko,
           buka: toko.buka,
           ratingRataRata: Number(toko.rating_rata_rata ?? 0),
+          fotoUrl: toko.foto_url ?? null,
         }
       : null,
   };

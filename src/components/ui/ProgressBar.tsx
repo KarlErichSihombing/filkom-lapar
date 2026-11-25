@@ -19,7 +19,7 @@ export function ProgressBar({ value, label, color = "primary"}: Props) {
         <div
             role="progressbar"
             aria-label={label}
-            aria-valuein={0}
+            aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(pct)}
             className="h-1.5 w-full overflow-hidden rounded-full bg-surface-variant"

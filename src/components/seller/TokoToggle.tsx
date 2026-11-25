@@ -1,20 +1,31 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { setStandBuka } from "@/actions/menu";
+import { useStandStatus } from "@/components/seller/StandStatus";
 
-export function TokoToggle({ buka }: { buka: boolean }) {
-  const [optimistic, setOptimistic] = useOptimistic(buka);
+export function TokoToggle({
+  tokoId,
+  buka: initialBuka,
+}: {
+  tokoId: string;
+  buka?: boolean;
+}) {
+  const { buka, setBuka } = useStandStatus(initialBuka ?? true);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function toggle() {
-    const next = !optimistic;
+    const prev = buka;
+    const next = !prev;
     setError(null);
+    setBuka(next);
     startTransition(async () => {
-      setOptimistic(next);
-      const res = await setStandBuka(next);
-      if (res.error) setError(res.error);
+      const res = await setStandBuka(tokoId, next);
+      if (res.error) {
+        setBuka(prev);
+        setError(res.error);
+      }
     });
   }
 
@@ -26,15 +37,15 @@ export function TokoToggle({ buka }: { buka: boolean }) {
         </p>
         <p
           className={`flex items-center justify-end gap-1.5 text-xs font-medium ${
-            optimistic ? "text-secondary" : "text-on-surface-muted"
+            buka ? "text-secondary" : "text-on-surface-muted"
           }`}
         >
           <span
             className={`size-1.5 rounded-full ${
-              optimistic ? "bg-secondary-soft" : "bg-neutral"
+              buka ? "bg-secondary-soft" : "bg-neutral"
             }`}
           />
-          {optimistic ? "Toko buka" : "Toko tutup"}
+          {buka ? "Toko buka" : "Toko tutup"}
         </p>
         {error && (
           <p role="alert" className="text-[11px] text-error">
@@ -45,17 +56,17 @@ export function TokoToggle({ buka }: { buka: boolean }) {
       <button
         type="button"
         role="switch"
-        aria-checked={optimistic}
+        aria-checked={buka}
         aria-label="Stand menerima pesanan"
         onClick={toggle}
         disabled={pending}
         className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-          optimistic ? "bg-secondary-soft" : "bg-outline/40"
+          buka ? "bg-secondary-soft" : "bg-outline/40"
         }`}
       >
         <span
           className={`absolute left-0.5 top-0.5 size-6 rounded-full bg-white shadow transition-transform ${
-            optimistic ? "translate-x-5" : ""
+            buka ? "translate-x-5" : ""
           }`}
         />
       </button>

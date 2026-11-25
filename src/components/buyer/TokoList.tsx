@@ -87,7 +87,15 @@ export function TokoList({ stands }: { stands: StandCard[] }) {
                   className="group block overflow-hidden rounded-3xl bg-white transition-shadow hover:shadow-lg hover:shadow-primary/10"
                 >
                   <div className="relative aspect-[16/9] overflow-hidden bg-gradient-to-br from-primary-container to-surface-variant">
-                    {photos.length > 0 ? (
+                    {s.fotoUrl ? (
+                      <Image
+                        src={s.fotoUrl}
+                        alt=""
+                        fill
+                        sizes="(min-width:1024px) 320px, (min-width:640px) 45vw, 100vw"
+                        className={`object-cover ${s.buka ? "" : "grayscale"}`}
+                      />
+                    ) : photos.length > 0 ? (
                       <div
                         className={`grid size-full gap-0.5 ${photoCols[photos.length]} ${
                           s.buka ? "" : "grayscale"

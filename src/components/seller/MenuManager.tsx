@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useMemo, useState } from "react";
 import { Modal } from "@/components/admin/Modal";
 import { DeleteMenuForm, MenuForm } from "@/components/seller/MenuForm";
+import { SellerStats } from "@/components/seller/SellerStats";
 import { StokToggle } from "@/components/seller/StokToggle";
 import { Button } from "@/components/ui/Button";
 import { ImageIcon, Pencil, Plus, Search, Trash } from "@/components/ui/icons";
@@ -71,15 +72,19 @@ function Pills<T extends string>({
 export function MenuManager({
   tokoId,
   items,
+  rating = 0,
 }: {
   tokoId: string;
   items: MenuItem[];
+  rating?: number;
 }) {
   const [query, setQuery] = useState("");
   const [kategori, setKategori] = useState<KategoriFilter>("semua");
   const [stok, setStok] = useState<StokFilter>("semua");
   const [dialog, setDialog] = useState<DialogState>(null);
   const close = useCallback(() => setDialog(null), []);
+
+  const available = useMemo(() => items.filter((m) => m.tersedia).length, [items]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -93,6 +98,13 @@ export function MenuManager({
 
   return (
     <>
+      <SellerStats
+        total={items.length}
+        available={available}
+        unavailable={items.length - available}
+        rating={rating}
+      />
+
       <section className="rounded-3xl bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
