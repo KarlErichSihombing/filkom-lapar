@@ -82,12 +82,18 @@ export async function createXenditDynamicQr({
         res.status,
         errBody,
       );
+      const hint =
+        res.status === 403
+          ? "Izin API Key Xendit belum mengaktifkan 'Money-in Products: Write'. Ubah permission API Key di Xendit Dashboard."
+          : res.status === 401
+            ? "XENDIT_SECRET_KEY tidak valid (HTTP 401)."
+            : `Xendit HTTP ${res.status}`;
       return {
         qrId: `qr_sim_${pembayaranId.replace(/-/g, "").slice(0, 16)}`,
         referenceId: pembayaranId,
         qrString: buildFallbackQrString(pembayaranId, nominal),
         isSimulatedFallback: true,
-        errorMessage: `Xendit HTTP ${res.status}: ${errBody || "Gagal membuat QR"}`,
+        errorMessage: hint,
       };
     }
 

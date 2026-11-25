@@ -131,6 +131,8 @@ export async function fetchSellerOrders(): Promise<SellerOrderCard[]> {
 
 /**
  * Ambil saldo toko saat ini beserta daftar riwayat mutasi saldo (pembayaran masuk & potongan pembatalan).
+ * Tetap menghitung saldo & mutasi secara akurat dari tabel pesanan meskipun SQL 006 belum dijalankan
+ * atau untuk pesanan yang dibuat sebelum SQL 006 dijalankan.
  */
 export async function fetchSellerBalanceInfo(): Promise<SellerBalanceInfo> {
   const ctx = await getSellerContext();
@@ -139,46 +141,121 @@ export async function fetchSellerBalanceInfo(): Promise<SellerBalanceInfo> {
   }
 
   const admin = createAdminClient();
-  const [tokoRes, mutasiRes] = await Promise.all([
-    admin.from("toko").select("saldo").eq("id", ctx.toko.id).maybeSingle(),
+  const [mutasiRes, pesananRes] = await Promise.all([
     admin
       .from("mutasi_saldo")
-      .select("id, jenis, nominal, saldo_sebelum, saldo_sesudah, keterangan, created_at")
+      .select("id, pesanan_id, jenis, nominal, saldo_sebelum, saldo_sesudah, keterangan, created_at")
       .eq("toko_id", ctx.toko.id)
-      .order("created_at", { ascending: false })
-      .limit(50),
+      .order("created_at", { ascending: true }),
+    admin
+      .from("pesanan")
+      .select("id, kode, total_harga, status_pesanan, alasan_pembatalan, created_at, updated_at")
+      .eq("toko_id", ctx.toko.id)
+      .not("status_pesanan", "in", '("menunggu_pembayaran","kedaluwarsa")')
+      .order("created_at", { ascending: true }),
   ]);
 
+  // Kumpulkan event mutasi dari tabel pesanan agar pesanan yang belum punya baris di mutasi_saldo
+  // tetap dihitung dengan akurat.
+  type RawEvent = {
+    id: string;
+    jenis: JenisMutasiSaldo;
+    nominal: number;
+    keterangan: string;
+    createdAt: string;
+  };
+
+  const events: RawEvent[] = [];
+  const recordedMasukIds = new Set<string>();
+  const recordedBatalIds = new Set<string>();
+
   if (!mutasiRes.error && mutasiRes.data) {
-    const mutasi: MutasiSaldoItem[] = mutasiRes.data.map((m) => ({
-      id: String(m.id),
-      jenis: m.jenis as JenisMutasiSaldo,
-      nominal: Number(m.nominal),
-      saldoSebelum: Number(m.saldo_sebelum),
-      saldoSesudah: Number(m.saldo_sesudah),
-      keterangan: String(m.keterangan),
-      createdAt: String(m.created_at),
-    }));
-
-    const totalMasuk = mutasi
-      .filter((m) => m.nominal > 0)
-      .reduce((acc, m) => acc + m.nominal, 0);
-    const totalPotongan = mutasi
-      .filter((m) => m.nominal < 0)
-      .reduce((acc, m) => acc + Math.abs(m.nominal), 0);
-    const saldoToko =
-      tokoRes.data && "saldo" in tokoRes.data
-        ? Number((tokoRes.data as { saldo?: number | string }).saldo ?? 0)
-        : Math.max(0, totalMasuk - totalPotongan);
-
-    return { saldoToko, totalMasuk, totalPotongan, mutasi };
+    for (const m of mutasiRes.data) {
+      const jenis = m.jenis as JenisMutasiSaldo;
+      const pid = (m as { pesanan_id?: string | null }).pesanan_id ?? null;
+      if (pid) {
+        if (jenis === "pembayaran_masuk") recordedMasukIds.add(pid);
+        else recordedBatalIds.add(pid);
+      }
+      events.push({
+        id: String(m.id),
+        jenis,
+        nominal: Number(m.nominal),
+        keterangan: String(m.keterangan),
+        createdAt: String(m.created_at),
+      });
+    }
   }
 
-  return { saldoToko: 0, totalMasuk: 0, totalPotongan: 0, mutasi: [] };
+  for (const p of pesananRes.data ?? []) {
+    const pid = String(p.id);
+    const kode = String(p.kode);
+    const nominal = Number(p.total_harga);
+    const status = p.status_pesanan as StatusPesanan;
+
+    if (!recordedMasukIds.has(pid)) {
+      events.push({
+        id: `masuk-${pid}`,
+        jenis: "pembayaran_masuk",
+        nominal,
+        keterangan: `Pembayaran pesanan #${kode}`,
+        createdAt: String(p.created_at),
+      });
+    }
+
+    if (status === "dibatalkan" && !recordedBatalIds.has(pid)) {
+      const alasan = p.alasan_pembatalan ? ` (${p.alasan_pembatalan})` : "";
+      events.push({
+        id: `batal-${pid}`,
+        jenis: "pembatalan_pembeli",
+        nominal: -nominal,
+        keterangan: `Refund pembatalan pesanan #${kode}${alasan}`,
+        createdAt: String(p.updated_at || p.created_at),
+      });
+    }
+  }
+
+  // Urutkan kronologis dari paling awal untuk menghitung saldo_sebelum -> saldo_sesudah secara presisi
+  events.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  let runningSaldo = 0;
+  let totalMasuk = 0;
+  let totalPotongan = 0;
+
+  const computed: MutasiSaldoItem[] = events.map((ev) => {
+    const saldoSebelum = runningSaldo;
+    if (ev.nominal >= 0) {
+      totalMasuk += ev.nominal;
+      runningSaldo += ev.nominal;
+    } else {
+      totalPotongan += Math.abs(ev.nominal);
+      runningSaldo = Math.max(0, runningSaldo + ev.nominal);
+    }
+    return {
+      id: ev.id,
+      jenis: ev.jenis,
+      nominal: ev.nominal,
+      saldoSebelum,
+      saldoSesudah: runningSaldo,
+      keterangan: ev.keterangan,
+      createdAt: ev.createdAt,
+    };
+  });
+
+  // Tampilkan mutasi terbaru di paling atas
+  computed.reverse();
+
+  return {
+    saldoToko: runningSaldo,
+    totalMasuk,
+    totalPotongan,
+    mutasi: computed,
+  };
 }
 
 /**
  * Ambil daftar saldo refund / kredit milik pembeli di masing-masing stand.
+ * Otomatis menghitung dari pesanan berstatus 'dibatalkan' bila tabel saldo_pembeli belum terisi.
  */
 export async function fetchBuyerSaldoToko(): Promise<BuyerSaldoTokoItem[]> {
   const supabase = await createClient();
@@ -187,29 +264,41 @@ export async function fetchBuyerSaldoToko(): Promise<BuyerSaldoTokoItem[]> {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data, error } = await supabase
-    .from("saldo_pembeli")
-    .select("toko_id, saldo, toko(nama_toko, no_stand)")
+  const { data: cancelledOrders } = await supabase
+    .from("pesanan")
+    .select("toko_id, total_harga, toko(nama_toko, no_stand)")
     .eq("pembeli_id", user.id)
-    .gt("saldo", 0);
+    .eq("status_pesanan", "dibatalkan");
 
-  if (error || !data) return [];
-
-  type Row = {
-    toko_id: string;
-    saldo: number | string;
-    toko: { nama_toko: string; no_stand: number } | { nama_toko: string; no_stand: number }[] | null;
-  };
-
-  return (data as unknown as Row[]).map((r) => {
-    const t = Array.isArray(r.toko) ? r.toko[0] : r.toko;
-    return {
-      tokoId: r.toko_id,
-      namaToko: t?.nama_toko ?? "Stand Kantin",
-      noStand: t?.no_stand ?? null,
-      saldo: Number(r.saldo),
+  if (cancelledOrders && cancelledOrders.length > 0) {
+    type OrderRow = {
+      toko_id: string;
+      total_harga: number | string;
+      toko:
+        | { nama_toko: string; no_stand: number }
+        | { nama_toko: string; no_stand: number }[]
+        | null;
     };
-  });
+    const byToko = new Map<string, BuyerSaldoTokoItem>();
+    for (const r of cancelledOrders as unknown as OrderRow[]) {
+      const t = Array.isArray(r.toko) ? r.toko[0] : r.toko;
+      const prev = byToko.get(r.toko_id);
+      const add = Number(r.total_harga);
+      if (prev) {
+        prev.saldo += add;
+      } else {
+        byToko.set(r.toko_id, {
+          tokoId: r.toko_id,
+          namaToko: t?.nama_toko ?? "Stand Kantin",
+          noStand: t?.no_stand ?? null,
+          saldo: add,
+        });
+      }
+    }
+    return [...byToko.values()];
+  }
+
+  return [];
 }
 
 /**
