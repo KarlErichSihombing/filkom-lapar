@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
+import { useStandStatus } from "@/components/seller/StandStatus";
 import { BarChart, MapPin, ShoppingBag, Utensils } from "@/components/ui/icons";
 import { pad2 } from "@/lib/format";
 import type { SellerContext } from "@/lib/seller";
@@ -24,6 +27,7 @@ export function SellerShell({
   children: ReactNode;
 }) {
   const toko = ctx.toko;
+  const { buka } = useStandStatus(toko?.buka ?? true);
   const displayName = ctx.nama || "Penjual";
 
   return (
@@ -51,10 +55,10 @@ export function SellerShell({
             <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-on-surface-muted">
               <span
                 className={`size-1.5 rounded-full ${
-                  toko.buka ? "bg-secondary-soft" : "bg-neutral"
+                  buka ? "bg-secondary-soft" : "bg-neutral"
                 }`}
               />
-              {toko.buka ? "Buka · Menerima pesanan" : "Tutup"}
+              {buka ? "Buka · Menerima pesanan" : "Tutup"}
             </p>
           )}
         </div>

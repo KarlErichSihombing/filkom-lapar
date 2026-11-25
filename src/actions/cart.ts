@@ -1,6 +1,7 @@
 "use server";
 
 import { fetchCartLines } from "@/lib/cart";
+import { ensurePembayaranQr } from "@/lib/payment";
 import { createClient } from "@/lib/supabase/server";
 import type { CartLine } from "@/types/cart";
 
@@ -56,5 +57,7 @@ export async function bayarSekarang(): Promise<CartResult & { pembayaranId?: str
   if (error || !data) {
     return { error: friendly(error?.message, "Checkout gagal. Coba lagi beberapa saat.") };
   }
-  return { ok: true, pembayaranId: String(data) };
+  const pembayaranId = String(data);
+  await ensurePembayaranQr(pembayaranId).catch(() => null);
+  return { ok: true, pembayaranId };
 }

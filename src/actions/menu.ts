@@ -141,6 +141,7 @@ export async function toggleStok(
   if (error || !data || data.length === 0) {
     return { error: "Gagal mengubah stok. Muat ulang halaman lalu coba lagi." };
   }
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 

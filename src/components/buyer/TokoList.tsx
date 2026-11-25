@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, Search, Star, Store } from "@/components/ui/icons";
 import { pad2 } from "@/lib/format";
+import { createClient } from "@/lib/supabase/client";
 import type { StandCard } from "@/types/toko";
 
 const photoCols: Record<number, string> = {
@@ -19,10 +20,97 @@ function menuHint(s: StandCard, q: string) {
   return s.menu.find((m) => m.namaMenu.toLowerCase().includes(q))?.namaMenu ?? null;
 }
 
-export function TokoList({ stands }: { stands: StandCard[] }) {
+type LiveMenuRow = {
+  id: string;
+  toko_id: string;
+  nama_menu: string;
+  foto_url: string | null;
+  tersedia: boolean;
+  deleted_at: string | null;
+};
+
+type LiveTokoRow = {
+  id: string;
+  nama_toko?: string;
+  buka?: boolean;
+  foto_url?: string | null;
+  rating_rata_rata?: number | null;
+};
+
+export function TokoList({ stands: initialStands }: { stands: StandCard[] }) {
+  const [stands, setStands] = useState(initialStands);
   const [query, setQuery] = useState("");
   const [onlyOpen, setOnlyOpen] = useState(false);
   const q = query.trim().toLowerCase();
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("beranda-katalog")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "menu" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const id = (payload.old as { id?: string }).id;
+            if (id) {
+              setStands((prev) =>
+                prev.map((s) => ({ ...s, menu: s.menu.filter((m) => m.id !== id) })),
+              );
+            }
+            return;
+          }
+          const row = payload.new as unknown as LiveMenuRow;
+          setStands((prev) =>
+            prev.map((s) => {
+              if (row.deleted_at) {
+                return { ...s, menu: s.menu.filter((m) => m.id !== row.id) };
+              }
+              if (s.id !== row.toko_id) return s;
+              const item = {
+                id: row.id,
+                namaMenu: row.nama_menu,
+                fotoUrl: row.foto_url,
+                tersedia: row.tersedia,
+              };
+              return s.menu.some((m) => m.id === item.id)
+                ? { ...s, menu: s.menu.map((m) => (m.id === item.id ? item : m)) }
+                : { ...s, menu: [...s.menu, item] };
+            }),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "toko" },
+        (payload) => {
+          const row = payload.new as unknown as LiveTokoRow;
+          setStands((prev) =>
+            prev
+              .map((s) =>
+                s.id === row.id
+                  ? {
+                      ...s,
+                      buka: row.buka ?? s.buka,
+                      fotoUrl: row.foto_url === undefined ? s.fotoUrl : row.foto_url,
+                      namaToko: row.nama_toko ?? s.namaToko,
+                      rating:
+                        row.rating_rata_rata === undefined
+                          ? s.rating
+                          : Number(row.rating_rata_rata ?? 0),
+                    }
+                  : s,
+              )
+              .sort((a, b) => Number(b.buka) - Number(a.buka) || a.noStand - b.noStand),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const visible = useMemo(
     () =>

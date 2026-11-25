@@ -85,19 +85,25 @@ export function CartProvider({
     }
   }, []);
 
-  const change = useCallback((menuId: string, delta: number, snap?: MenuSnapshot) => {
-    setError(null);
-    setLines((prev) => applyDelta(prev, menuId, delta, snap));
-    const revert = (message: string) => {
-      setLines((prev) => applyDelta(prev, menuId, -delta, snap));
-      setError(message);
-    };
-    ubahJumlah(menuId, delta)
-      .then((res) => {
-        if (res.error) revert(res.error);
-      })
-      .catch(() => revert("Koneksi bermasalah. Perubahan keranjang dibatalkan."));
-  }, []);
+  const change = useCallback(
+    (menuId: string, delta: number, snap?: MenuSnapshot) => {
+      setError(null);
+      setLines((prev) => {
+        const existing = prev.find((l) => l.menuId === menuId);
+        return applyDelta(prev, menuId, delta, snap ?? existing);
+      });
+      const revert = (message: string) => {
+        setError(message);
+        void refresh();
+      };
+      ubahJumlah(menuId, delta)
+        .then((res) => {
+          if (res.error) revert(res.error);
+        })
+        .catch(() => revert("Koneksi bermasalah. Perubahan keranjang dibatalkan."));
+    },
+    [refresh],
+  );
 
   const remove = useCallback(
     (menuId: string) => {

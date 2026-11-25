@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useCart } from "@/components/buyer/CartProvider";
 import { QtyStepper } from "@/components/buyer/QtyStepper";
 import { ArrowRight, ImageIcon, ShoppingBag, Trash } from "@/components/ui/icons";
@@ -24,6 +24,33 @@ export function groupLines(lines: CartLine[]): Group[] {
 
 function CartLineRow({ line }: { line: CartLine }) {
   const cart = useCart();
+  const lastSavedRef = useRef(line.catatan.trim());
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  function saveNote(raw: string, immediate: boolean) {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const trimmed = raw.trim();
+    if (trimmed === lastSavedRef.current) return;
+    if (immediate) {
+      lastSavedRef.current = trimmed;
+      cart.setNote(line.menuId, trimmed);
+    } else {
+      timerRef.current = setTimeout(() => {
+        lastSavedRef.current = trimmed;
+        cart.setNote(line.menuId, trimmed);
+      }, 350);
+    }
+  }
+
   return (
     <li className={`rounded-2xl bg-surface p-3 ${line.valid ? "" : "ring-1 ring-error/40"}`}>
       <div className="flex gap-3">
@@ -75,10 +102,8 @@ function CartLineRow({ line }: { line: CartLine }) {
           maxLength={200}
           aria-label={`Catatan untuk ${line.namaMenu}`}
           placeholder="Catatan untuk penjual (opsional), mis. sambal dipisah"
-          onBlur={(e) => {
-            const v = e.target.value.trim();
-            if (v !== line.catatan.trim()) cart.setNote(line.menuId, v);
-          }}
+          onChange={(e) => saveNote(e.target.value, false)}
+          onBlur={(e) => saveNote(e.target.value, true)}
           className="min-w-0 flex-1 rounded-full bg-white px-4 py-2 text-xs placeholder:text-outline"
         />
         <button

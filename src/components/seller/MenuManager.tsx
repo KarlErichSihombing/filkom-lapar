@@ -78,30 +78,43 @@ export function MenuManager({
   items: MenuItem[];
   rating?: number;
 }) {
+  const [stokOverrides, setStokOverrides] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
   const [kategori, setKategori] = useState<KategoriFilter>("semua");
   const [stok, setStok] = useState<StokFilter>("semua");
   const [dialog, setDialog] = useState<DialogState>(null);
   const close = useCallback(() => setDialog(null), []);
 
-  const available = useMemo(() => items.filter((m) => m.tersedia).length, [items]);
+  const list = useMemo(
+    () =>
+      items.map((m) =>
+        m.id in stokOverrides ? { ...m, tersedia: stokOverrides[m.id]! } : m,
+      ),
+    [items, stokOverrides],
+  );
+
+  const handleToggleStok = useCallback((menuId: string, nextTersedia: boolean) => {
+    setStokOverrides((prev) => ({ ...prev, [menuId]: nextTersedia }));
+  }, []);
+
+  const available = useMemo(() => list.filter((m) => m.tersedia).length, [list]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return items.filter((m) => {
+    return list.filter((m) => {
       if (kategori !== "semua" && m.kategori !== kategori) return false;
       if (stok === "tersedia" && !m.tersedia) return false;
       if (stok === "habis" && m.tersedia) return false;
       return !q || m.namaMenu.toLowerCase().includes(q);
     });
-  }, [items, query, kategori, stok]);
+  }, [list, query, kategori, stok]);
 
   return (
     <>
       <SellerStats
-        total={items.length}
+        total={list.length}
         available={available}
-        unavailable={items.length - available}
+        unavailable={list.length - available}
         rating={rating}
       />
 
@@ -186,7 +199,12 @@ export function MenuManager({
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-2">
-                  <StokToggle menuId={m.id} tersedia={m.tersedia} nama={m.namaMenu} />
+                  <StokToggle
+                    menuId={m.id}
+                    tersedia={m.tersedia}
+                    nama={m.namaMenu}
+                    onChange={(next) => handleToggleStok(m.id, next)}
+                  />
                   <div className="flex gap-1.5">
                     <button
                       type="button"
