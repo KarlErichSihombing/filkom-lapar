@@ -58,6 +58,7 @@ export type PesananSummary = {
   waktuBayar: string | null;
   createdAt: string;
   items: DetailPesananItem[];
+  ulasan?: UlasanSummary | null;
 };
 
 export type JenisMutasiSaldo =
@@ -87,4 +88,40 @@ export type BuyerSaldoTokoItem = {
   namaToko: string;
   noStand: number | null;
   saldo: number;
+};
+
+export type UlasanSummary = {
+  id: string;
+  pesananId: string;
+  rating: number;
+  komentar: string | null;
+  createdAt: string;
+};
+
+export type PublicReviewItem = {
+  id: string;
+  pesananId: string;
+  kodePesanan: string;
+  namaPembeli: string;
+  rating: number;
+  komentar: string | null;
+  createdAt: string;
+  menuNames: string[];
+};
+
+export type MenuSalesStat = {
+  menuId: string;
+  namaMenu: string;
+  porsiTerjual: number;
+  totalPendapatan: number;
+};
+
+export type SalesOrderRecord = {
+  id: string;
+  kode: string;
+  namaPembeli: string;
+  totalHarga: number;
+  statusPesanan: StatusPesanan;
+  createdAt: string;
+  items: DetailPesananItem[];
 };

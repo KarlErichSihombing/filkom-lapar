@@ -9,6 +9,7 @@ import { ArrowRight, ImageIcon, Plus, Search, ShoppingBag, Star } from "@/compon
 import { pad2, rupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { KATEGORI_LABEL, type Kategori, type MenuItem } from "@/types/menu";
+import type { PublicReviewItem } from "@/types/order";
 
 type Props = {
   toko: {
@@ -20,6 +21,7 @@ type Props = {
     fotoUrl?: string | null;
   };
   initialMenu: MenuItem[];
+  initialReviews?: PublicReviewItem[];
 };
 
 type MenuRow = {
@@ -43,12 +45,13 @@ const toItem = (r: MenuRow): MenuItem => ({
   tersedia: r.tersedia,
 });
 
-export function TokoMenuView({ toko, initialMenu }: Props) {
+export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) {
   const cart = useCart();
   const [menu, setMenu] = useState(initialMenu);
   const [buka, setBuka] = useState(toko.buka);
   const [query, setQuery] = useState("");
   const [kategori, setKategori] = useState<"semua" | Kategori>("semua");
+  const [starFilter, setStarFilter] = useState<number | "semua">("semua");
 
   // Perubahan dari penjual langsung masuk tanpa memuat ulang halaman.
   useEffect(() => {
@@ -306,6 +309,139 @@ export function TokoMenuView({ toko, initialMenu }: Props) {
           </Link>
         </div>
       )}
+
+      {/* Bagian Ulasan & Rating Pembeli (Tahap 7) */}
+      <section className="rounded-3xl bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Ulasan &amp; Rating Pembeli</h2>
+            <p className="mt-0.5 text-xs text-on-surface-muted">
+              Berdasarkan {initialReviews.length} ulasan pesanan selesai di {toko.namaToko}.
+            </p>
+          </div>
+          {initialReviews.length > 0 && (
+            <div className="flex flex-wrap gap-1 rounded-full bg-surface p-1">
+              {(["semua", 5, 4, 3, 2, 1] as const).map((s) => (
+                <button
+                  key={String(s)}
+                  type="button"
+                  onClick={() => setStarFilter(s)}
+                  className={`rounded-full px-3 py-1 font-label text-xs font-medium transition-colors ${
+                    starFilter === s
+                      ? "bg-primary-strong text-on-primary"
+                      : "text-on-surface-muted hover:bg-surface-variant"
+                  }`}
+                >
+                  {s === "semua" ? "Semua" : `${s} ★`}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {initialReviews.length === 0 ? (
+          <p className="mt-4 rounded-2xl bg-surface px-4 py-8 text-center text-xs text-on-surface-muted">
+            Belum ada ulasan untuk stand ini. Jadilah pembeli pertama yang memberikan ulasan!
+          </p>
+        ) : (
+          <>
+            <div className="mt-4 grid gap-4 rounded-2xl bg-surface p-4 sm:grid-cols-[10rem_1fr] sm:items-center">
+              <div className="text-center">
+                <p className="font-headline text-4xl font-bold text-primary-strong">
+                  {toko.rating.toFixed(1)}
+                </p>
+                <div className="mt-1 flex justify-center gap-0.5">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star
+                      key={i}
+                      className={`size-4 ${
+                        i < Math.round(toko.rating)
+                          ? "fill-primary text-primary"
+                          : "text-outline/40"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="mt-1 font-label text-[11px] text-on-surface-muted">
+                  {initialReviews.length} Ulasan Pelanggan
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                {[5, 4, 3, 2, 1].map((star) => {
+                  const count = initialReviews.filter((r) => r.rating === star).length;
+                  const pct =
+                    initialReviews.length > 0
+                      ? Math.round((count / initialReviews.length) * 100)
+                      : 0;
+                  return (
+                    <div key={star} className="flex items-center gap-2.5 text-xs">
+                      <span className="w-8 shrink-0 font-label font-medium text-on-surface-muted">
+                        {star} ★
+                      </span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-white">
+                        <div
+                          className="h-full rounded-full bg-primary-strong"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="w-7 shrink-0 text-right font-label text-[11px] tabular-nums text-on-surface-muted">
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {initialReviews
+                .filter((r) => starFilter === "semua" || r.rating === starFilter)
+                .map((r) => (
+                  <li key={r.id} className="rounded-2xl bg-surface p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-headline text-sm font-semibold">
+                        {r.namaPembeli}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 rounded-full bg-white px-2.5 py-0.5 font-label text-xs font-bold text-primary-strong">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <Star
+                            key={i}
+                            className={`size-3 ${
+                              i < r.rating ? "fill-primary text-primary" : "text-outline/40"
+                            }`}
+                          />
+                        ))}
+                        <span className="ml-1">{r.rating}/5</span>
+                      </span>
+                    </div>
+                    {r.komentar ? (
+                      <p className="mt-2 text-xs leading-relaxed text-on-surface">
+                        &ldquo;{r.komentar}&rdquo;
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs italic text-on-surface-muted">
+                        Memberikan rating {r.rating} bintang tanpa komentar tertulis.
+                      </p>
+                    )}
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-on-surface-muted">
+                      {r.menuNames.length > 0 && (
+                        <span className="truncate font-label">
+                          Menu: {r.menuNames.join(", ")}
+                        </span>
+                      )}
+                      <span>
+                        {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(
+                          new Date(r.createdAt),
+                        )}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          </>
+        )}
+      </section>
     </>
   );
 }

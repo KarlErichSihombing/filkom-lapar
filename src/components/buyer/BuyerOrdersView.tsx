@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { batalkanPesananPembeli, fetchBuyerSaldoToko } from "@/actions/order";
+import { OrderReviewBox } from "@/components/buyer/OrderReviewBox";
 import { CancelCountdown } from "@/components/pembeli/CancelCountdown";
 import { ArrowRight, CircleCheck, CircleX, Clock, Receipt, ShoppingBag, Store } from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
@@ -13,6 +14,7 @@ import {
   type BuyerSaldoTokoItem,
   type PesananSummary,
   type StatusPesanan,
+  type UlasanSummary,
 } from "@/types/order";
 
 type BuyerTab = "semua" | "berjalan" | "siap_diambil" | "selesai" | "dibatalkan";
@@ -159,6 +161,12 @@ export function BuyerOrdersView({
     if (typeof window === "undefined" || !("Notification" in window)) return;
     const perm = await Notification.requestPermission();
     setNotifPerm(perm);
+  }
+
+  function handleReviewSubmitted(orderId: string, ulasan: UlasanSummary) {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, ulasan } : o)),
+    );
   }
 
   const counts = useMemo(() => {
@@ -462,6 +470,16 @@ export function BuyerOrdersView({
                     </li>
                   ))}
                 </ul>
+
+                {/* Formulir / Ringkasan Ulasan & Rating (Hanya untuk pesanan berstatus Selesai) */}
+                {status === "selesai" && (
+                  <OrderReviewBox
+                    pesananId={p.id}
+                    namaToko={p.namaToko}
+                    ulasan={p.ulasan ?? null}
+                    onSubmitted={(u) => handleReviewSubmitted(p.id, u)}
+                  />
+                )}
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-surface pt-4">
                   <div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { fetchTokoReviews } from "@/actions/review";
 import { TokoMenuView } from "@/components/buyer/TokoMenuView";
 import { ArrowLeft } from "@/components/ui/icons";
 import { createClient } from "@/lib/supabase/server";
@@ -28,7 +29,7 @@ export default async function TokoPage({
   const supabase = await createClient();
 
   // RLS: stand nonaktif tidak terlihat oleh pembeli -> dianggap tidak ada
-  const [tokoRes, menuRes] = await Promise.all([
+  const [tokoRes, menuRes, reviews] = await Promise.all([
     supabase
       .from("toko")
       .select("id, no_stand, nama_toko, buka, rating_rata_rata, foto_url")
@@ -39,6 +40,7 @@ export default async function TokoPage({
       .select("id, nama_menu, deskripsi, harga, kategori, foto_url, tersedia")
       .eq("toko_id", tokoId)
       .is("deleted_at", null),
+    fetchTokoReviews(tokoId),
   ]);
 
   if (!tokoRes.data) notFound();
@@ -61,6 +63,11 @@ export default async function TokoPage({
     tersedia: r.tersedia,
   }));
 
+  const calculatedRating =
+    reviews.length > 0
+      ? Number((reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1))
+      : Number(toko.rating_rata_rata ?? 0);
+
   return (
     <>
       <Link
@@ -75,11 +82,12 @@ export default async function TokoPage({
           id: toko.id,
           namaToko: toko.nama_toko,
           noStand: toko.no_stand,
-          rating: Number(toko.rating_rata_rata ?? 0),
+          rating: calculatedRating,
           buka: toko.buka,
           fotoUrl: toko.foto_url ?? null,
         }}
         initialMenu={menu}
+        initialReviews={reviews}
       />
     </>
   );

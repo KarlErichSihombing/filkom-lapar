@@ -72,6 +72,7 @@ export function SellerShell({
 
   const onMenuPage = pathname === "/dashboard";
   const onPesananPage = pathname.startsWith("/dashboard/pesanan");
+  const onLaporanPage = pathname.startsWith("/dashboard/laporan");
 
   return (
     <div className="min-h-dvh pb-24 lg:grid lg:grid-cols-[15rem_1fr] lg:pb-0">
@@ -143,16 +144,17 @@ export function SellerShell({
             <Utensils className="size-4" /> Kelola menu &amp; stok
           </Link>
 
-          <span
-            aria-disabled="true"
-            className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-on-surface-muted opacity-70"
+          <Link
+            href="/dashboard/laporan"
+            aria-current={onLaporanPage ? "page" : undefined}
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              onLaporanPage
+                ? "bg-primary-strong text-on-primary"
+                : "text-on-surface-muted hover:bg-surface-variant"
+            }`}
           >
-            <BarChart className="size-4" />
-            Laporan penjualan
-            <span className="ml-auto rounded-full bg-surface-variant px-2 py-0.5 font-label text-[10px]">
-              Segera
-            </span>
-          </span>
+            <BarChart className="size-4" /> Laporan &amp; ulasan
+          </Link>
         </nav>
       </aside>
 
@@ -228,6 +230,19 @@ export function SellerShell({
         >
           <Utensils className="size-4" />
           <span>Menu &amp; Stok</span>
+        </Link>
+
+        <Link
+          href="/dashboard/laporan"
+          aria-current={onLaporanPage ? "page" : undefined}
+          className={`flex items-center gap-2 rounded-full px-4 py-2.5 font-label text-xs font-medium transition-colors ${
+            onLaporanPage
+              ? "bg-primary-strong text-on-primary"
+              : "text-on-surface-muted hover:bg-surface-variant"
+          }`}
+        >
+          <BarChart className="size-4" />
+          <span>Laporan</span>
         </Link>
       </nav>
     </div>
