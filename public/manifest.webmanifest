@@ -1,7 +1,7 @@
 {
   "name": "FILKOM Lapar — Kantin Digital FILKOM UB",
   "short_name": "FILKOM Lapar",
-  "description": "Pesan makanan dan minuman di kantin Gedung F FILKOM UB tanpa antre.",
+  "description": "Pesan makanan dan minuman di kantin GKM FILKOM UB tanpa antre.",
   "start_url": "/beranda",
   "scope": "/",
   "display": "standalone",

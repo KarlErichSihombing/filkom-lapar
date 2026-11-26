@@ -61,7 +61,7 @@ export function AdminShell({
             </p>
             <span className="hidden items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs text-on-surface-muted sm:flex">
               <MapPin className="size-3.5" />
-              Gedung F FILKOM UB
+              GKM FILKOM UB
             </span>
           </div>
 

@@ -54,14 +54,14 @@ export function SellerManager({
             <span className="rounded-full bg-primary-container px-2 py-0.5 font-medium text-primary-strong">
               Manajemen tenant
             </span>
-            <span className="text-on-surface-muted">· Kantin Gedung F</span>
+            <span className="text-on-surface-muted">· Kantin GKM</span>
           </p>
           <h1 className="mt-2 text-3xl font-semibold leading-tight">
             Kelola Akun Penjual &amp; Stand Kantin
           </h1>
           <p className="mt-1 text-sm text-on-surface-muted">
             Tambah, ubah, atau hapus akun penjual yang beroperasi di Kantin
-            Gedung F FILKOM UB.
+            GKM FILKOM UB.
           </p>
         </div>
         <Button onClick={() => setDialog({ type: "create" })}>
