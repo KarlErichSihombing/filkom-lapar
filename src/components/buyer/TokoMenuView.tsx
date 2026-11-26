@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { kirimUlasanToko } from "@/actions/review";
 import { useCart } from "@/components/buyer/CartProvider";
 import { QtyStepper } from "@/components/buyer/QtyStepper";
-import { ArrowRight, ImageIcon, Plus, Search, ShoppingBag, Star } from "@/components/ui/icons";
+import { Button } from "@/components/ui/Button";
+import { ArrowRight, CircleCheck, ImageIcon, Plus, Search, ShoppingBag, Star } from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { KATEGORI_LABEL, type Kategori, type MenuItem } from "@/types/menu";
@@ -45,13 +47,67 @@ const toItem = (r: MenuRow): MenuItem => ({
   tersedia: r.tersedia,
 });
 
+const RATING_LABELS: Record<number, string> = {
+  1: "1/5 · Kurang Memuaskan",
+  2: "2/5 · Cukup",
+  3: "3/5 · Lumayan",
+  4: "4/5 · Puas",
+  5: "5/5 · Sangat Puas",
+};
+
+const QUICK_TAGS = [
+  "Rasa Enak & Pas",
+  "Pelayanan Ramah",
+  "Harga Terjangkau",
+  "Penyajian Cepat",
+  "Porsi Mengenyangkan",
+];
+
 export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) {
   const cart = useCart();
   const [menu, setMenu] = useState(initialMenu);
   const [buka, setBuka] = useState(toko.buka);
   const [query, setQuery] = useState("");
   const [kategori, setKategori] = useState<"semua" | Kategori>("semua");
+  const [reviews, setReviews] = useState<PublicReviewItem[]>(initialReviews);
+  const [liveRating, setLiveRating] = useState<number>(toko.rating);
   const [starFilter, setStarFilter] = useState<number | "semua">("semua");
+
+  // State form ulasan langsung di halaman stand
+  const [inputRating, setInputRating] = useState<number>(5);
+  const [inputKomentar, setInputKomentar] = useState<string>("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [reviewPending, startReviewTransition] = useTransition();
+
+  function addQuickTag(tag: string) {
+    setInputKomentar((prev) => {
+      if (prev.toLowerCase().includes(tag.toLowerCase())) return prev;
+      const sep = prev.trim().length > 0 ? ", " : "";
+      return `${prev.trim()}${sep}${tag}`.slice(0, 500);
+    });
+  }
+
+  function handleSendReview() {
+    setReviewError(null);
+    setReviewSuccess(null);
+    startReviewTransition(async () => {
+      const res = await kirimUlasanToko(toko.id, inputRating, inputKomentar);
+      if (res.error) {
+        setReviewError(res.error);
+        return;
+      }
+      if (res.publicReview) {
+        setReviews((prev) => [res.publicReview!, ...prev]);
+      }
+      if (typeof res.newAvgRating === "number") {
+        setLiveRating(res.newAvgRating);
+      }
+      setInputKomentar("");
+      setInputRating(5);
+      setReviewSuccess("Terima kasih! Rating dan ulasan Anda untuk stand ini berhasil disimpan.");
+    });
+  }
 
   // Perubahan dari penjual langsung masuk tanpa memuat ulang halaman.
   useEffect(() => {
@@ -125,8 +181,8 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
             <h1 className="mt-1 text-3xl font-semibold leading-tight">{toko.namaToko}</h1>
             <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-on-surface-muted">
               <span className="flex items-center gap-1">
-                <Star className="size-4 text-primary" />
-                {toko.rating > 0 ? toko.rating.toFixed(1) : "Belum ada ulasan"}
+                <Star className="size-4 fill-primary text-primary" />
+                {liveRating > 0 ? `${liveRating.toFixed(1)} (${reviews.length} ulasan)` : "Belum ada ulasan"}
               </span>
               <span>
                 {menu.length === 0
@@ -310,16 +366,16 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
         </div>
       )}
 
-      {/* Bagian Ulasan & Rating Pembeli (Tahap 7) */}
+      {/* Bagian Ulasan & Rating Pembeli Langsung pada Stand (Tahap 7) */}
       <section className="rounded-3xl bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Ulasan &amp; Rating Pembeli</h2>
+            <h2 className="text-xl font-semibold">Rating &amp; Ulasan Stand</h2>
             <p className="mt-0.5 text-xs text-on-surface-muted">
-              Berdasarkan {initialReviews.length} ulasan pesanan selesai di {toko.namaToko}.
+              Berikan penilaian dan ulasan Anda langsung untuk {toko.namaToko}.
             </p>
           </div>
-          {initialReviews.length > 0 && (
+          {reviews.length > 0 && (
             <div className="flex flex-wrap gap-1 rounded-full bg-surface p-1">
               {(["semua", 5, 4, 3, 2, 1] as const).map((s) => (
                 <button
@@ -339,23 +395,129 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
           )}
         </div>
 
-        {initialReviews.length === 0 ? (
+        {/* Form Langsung Beri Rating & Ulasan Kantin */}
+        <div className="mt-4 rounded-2xl bg-surface p-4 sm:p-5">
+          <p className="font-headline text-sm font-semibold">
+            Beri Rating &amp; Ulasan untuk {toko.namaToko}
+          </p>
+
+          <div className="mt-3 flex flex-col items-center rounded-2xl bg-white p-4">
+            <div
+              role="radiogroup"
+              aria-label="Pilih rating bintang 1 sampai 5"
+              className="flex items-center gap-2"
+            >
+              {[1, 2, 3, 4, 5].map((star) => {
+                const active = star <= inputRating;
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    role="radio"
+                    aria-checked={inputRating === star}
+                    aria-label={`${star} bintang`}
+                    onClick={() => setInputRating(star)}
+                    className="rounded-full p-1 transition-transform hover:scale-110"
+                  >
+                    <Star
+                      className={`size-8 ${
+                        active ? "fill-primary text-primary" : "text-outline/40"
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <span className="mt-2 rounded-full bg-primary-container px-3.5 py-1 font-label text-xs font-semibold text-primary-strong">
+              {RATING_LABELS[inputRating]}
+            </span>
+
+            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+              {QUICK_TAGS.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => addQuickTag(tag)}
+                  className="rounded-full bg-surface px-3 py-1 font-label text-[11px] font-medium text-on-surface-muted transition-colors hover:bg-surface-variant"
+                >
+                  + {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <div className="mb-1 flex items-baseline justify-between">
+              <label
+                htmlFor={`ulasan-toko-${toko.id}`}
+                className="font-label text-xs font-medium text-on-surface-muted"
+              >
+                Tulis Ulasan Anda (opsional)
+              </label>
+              <span className="font-label text-[11px] text-on-surface-muted">
+                {inputKomentar.length}/500
+              </span>
+            </div>
+            <textarea
+              id={`ulasan-toko-${toko.id}`}
+              rows={3}
+              maxLength={500}
+              value={inputKomentar}
+              onChange={(e) => setInputKomentar(e.target.value)}
+              placeholder="Bagikan pengalaman Anda mengenai rasa makanan, kebersihan, atau pelayanan di stand ini..."
+              className="w-full rounded-2xl bg-white px-4 py-3 text-xs text-on-surface placeholder:text-outline"
+            />
+          </div>
+
+          {reviewError && (
+            <p
+              role="alert"
+              className="mt-2.5 rounded-xl bg-error/10 px-3.5 py-2.5 text-xs font-medium text-error"
+            >
+              {reviewError}
+            </p>
+          )}
+          {reviewSuccess && (
+            <p
+              role="status"
+              className="mt-2.5 flex items-center gap-2 rounded-xl bg-secondary-container px-3.5 py-2.5 text-xs font-medium text-secondary"
+            >
+              <CircleCheck className="size-4 shrink-0" />
+              <span>{reviewSuccess}</span>
+            </p>
+          )}
+
+          <div className="mt-3 flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSendReview}
+              disabled={reviewPending}
+            >
+              <Star className="size-3.5" />
+              {reviewPending ? "Mengirim Ulasan..." : "Kirim Rating & Ulasan"}
+            </Button>
+          </div>
+        </div>
+
+        {reviews.length === 0 ? (
           <p className="mt-4 rounded-2xl bg-surface px-4 py-8 text-center text-xs text-on-surface-muted">
-            Belum ada ulasan untuk stand ini. Jadilah pembeli pertama yang memberikan ulasan!
+            Belum ada ulasan untuk stand ini. Jadilah pembeli pertama yang memberikan ulasan di
+            atas!
           </p>
         ) : (
           <>
             <div className="mt-4 grid gap-4 rounded-2xl bg-surface p-4 sm:grid-cols-[10rem_1fr] sm:items-center">
               <div className="text-center">
                 <p className="font-headline text-4xl font-bold text-primary-strong">
-                  {toko.rating.toFixed(1)}
+                  {liveRating.toFixed(1)}
                 </p>
                 <div className="mt-1 flex justify-center gap-0.5">
                   {Array.from({ length: 5 }, (_, i) => (
                     <Star
                       key={i}
                       className={`size-4 ${
-                        i < Math.round(toko.rating)
+                        i < Math.round(liveRating)
                           ? "fill-primary text-primary"
                           : "text-outline/40"
                       }`}
@@ -363,16 +525,16 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
                   ))}
                 </div>
                 <p className="mt-1 font-label text-[11px] text-on-surface-muted">
-                  {initialReviews.length} Ulasan Pelanggan
+                  {reviews.length} Ulasan Pelanggan
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 {[5, 4, 3, 2, 1].map((star) => {
-                  const count = initialReviews.filter((r) => r.rating === star).length;
+                  const count = reviews.filter((r) => r.rating === star).length;
                   const pct =
-                    initialReviews.length > 0
-                      ? Math.round((count / initialReviews.length) * 100)
+                    reviews.length > 0
+                      ? Math.round((count / reviews.length) * 100)
                       : 0;
                   return (
                     <div key={star} className="flex items-center gap-2.5 text-xs">
@@ -395,7 +557,7 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
             </div>
 
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-              {initialReviews
+              {reviews
                 .filter((r) => starFilter === "semua" || r.rating === starFilter)
                 .map((r) => (
                   <li key={r.id} className="rounded-2xl bg-surface p-4">
@@ -425,10 +587,12 @@ export function TokoMenuView({ toko, initialMenu, initialReviews = [] }: Props) 
                       </p>
                     )}
                     <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-on-surface-muted">
-                      {r.menuNames.length > 0 && (
+                      {r.menuNames.length > 0 ? (
                         <span className="truncate font-label">
                           Menu: {r.menuNames.join(", ")}
                         </span>
+                      ) : (
+                        <span className="font-label">Ulasan Stand</span>
                       )}
                       <span>
                         {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(

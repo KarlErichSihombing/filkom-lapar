@@ -20,6 +20,8 @@ export type ReviewActionResult = {
   ok?: boolean;
   error?: string;
   ulasan?: UlasanSummary;
+  publicReview?: PublicReviewItem;
+  newAvgRating?: number;
 };
 
 function maskName(fullName: string | null | undefined) {
@@ -28,6 +30,119 @@ function maskName(fullName: string | null | undefined) {
   const parts = clean.split(/\s+/);
   if (parts.length === 1) return parts[0]!;
   return `${parts[0]} ${parts[1]![0]?.toUpperCase() ?? ""}.`;
+}
+
+/**
+ * Kirim rating (1-5 bintang) & ulasan (maks 500 karakter) langsung pada stand kantin (/toko/[tokoId])
+ * tanpa harus melakukan pemesanan sampai selesai terlebih dahulu.
+ */
+export async function kirimUlasanToko(
+  tokoId: string,
+  rating: number,
+  komentar: string,
+): Promise<ReviewActionResult> {
+  if (!UUID_RE.test(tokoId)) {
+    return { error: "ID stand tidak valid." };
+  }
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return { error: "Pilih rating bintang antara 1 sampai 5 terlebih dahulu." };
+  }
+
+  const trimmed = komentar.trim();
+  if (trimmed.length > 500) {
+    return { error: "Ulasan maksimal 500 karakter." };
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (FORBIDDEN_WORDS.some((w) => new RegExp(`\\b${w}\\b`, "i").test(lower))) {
+    return {
+      error:
+        "Ulasan memuat kata yang tidak pantas. Mohon gunakan bahasa yang sopan dan konstruktif.",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sesi berakhir. Silakan login kembali." };
+
+  const admin = createAdminClient();
+  let insertedId: string | null = null;
+  const nowIso = new Date().toISOString();
+
+  // 1) Coba panggil RPC tambah_ulasan_toko
+  const rpcRes = await supabase.rpc("tambah_ulasan_toko", {
+    p_toko_id: tokoId,
+    p_rating: rating,
+    p_komentar: trimmed,
+  });
+
+  if (!rpcRes.error && rpcRes.data) {
+    insertedId = String(rpcRes.data);
+  } else {
+    // 2) Fallback via service_role bila fungsi tambah_ulasan_toko belum dijalankan di SQL Editor
+    const { data: ins, error: insErr } = await admin
+      .from("ulasan")
+      .insert({
+        toko_id: tokoId,
+        pembeli_id: user.id,
+        rating,
+        komentar: trimmed || null,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (insErr || !ins) {
+      return {
+        error:
+          "Gagal menyimpan ulasan. Pastikan SQL 007_ulasan_dan_laporan.sql terbaru sudah dijalankan di Supabase.",
+      };
+    }
+    insertedId = String(ins.id);
+  }
+
+  // Hitung ulang rata-rata rating stand dan simpan ke tabel toko
+  const { data: allRatings } = await admin
+    .from("ulasan")
+    .select("rating")
+    .eq("toko_id", tokoId);
+
+  const count = allRatings?.length ?? 1;
+  const sum = (allRatings ?? [{ rating }]).reduce((acc, r) => acc + Number(r.rating), 0);
+  const newAvgRating = Number((sum / count).toFixed(2));
+
+  await admin
+    .from("toko")
+    .update({ rating_rata_rata: newAvgRating })
+    .eq("id", tokoId);
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("nama")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  revalidatePath(`/toko/${tokoId}`);
+  revalidatePath("/beranda");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/laporan");
+
+  return {
+    ok: true,
+    newAvgRating,
+    publicReview: {
+      id: insertedId ?? crypto.randomUUID(),
+      pesananId: "",
+      kodePesanan: "Langsung",
+      namaPembeli: maskName(profile?.nama),
+      rating,
+      komentar: trimmed || null,
+      createdAt: nowIso,
+      menuNames: [],
+    },
+  };
 }
 
 /**
