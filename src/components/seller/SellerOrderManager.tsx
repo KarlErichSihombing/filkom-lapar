@@ -20,6 +20,7 @@ import {
   X,
 } from "@/components/ui/icons";
 import { pad2, rupiah } from "@/lib/format";
+import { showSystemNotification } from "@/lib/pwa";
 import { createClient } from "@/lib/supabase/client";
 import {
   STATUS_PESANAN_BADGE,
@@ -93,14 +94,12 @@ function playAlertChime() {
 }
 
 function triggerBrowserNotification(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission === "granted") {
-    try {
-      new Notification(title, { body, tag: "filkom-lapar-seller" });
-    } catch {
-      /* abaikan pada perangkat yang memerlukan service worker */
-    }
-  }
+  void showSystemNotification({
+    title,
+    body,
+    url: "/dashboard/pesanan",
+    tag: "filkom-lapar-seller",
+  });
 }
 
 function OrderCard({

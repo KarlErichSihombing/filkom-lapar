@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ShoppingBag, X } from "@/components/ui/icons";
+import { registerServiceWorker, showSystemNotification } from "@/lib/pwa";
 import { createClient } from "@/lib/supabase/client";
 import { STATUS_PESANAN_LABEL, type StatusPesanan } from "@/types/order";
 
@@ -42,17 +43,6 @@ function playBuyerChime(isReady: boolean) {
   }
 }
 
-function sendBrowserNotif(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission === "granted") {
-    try {
-      new Notification(title, { body, tag: "filkom-lapar-order-status" });
-    } catch {
-      /* abaikan bila perangkat tidak mengizinkan */
-    }
-  }
-}
-
 /**
  * Pemantau global perubahan status pesanan milik pembeli yang sedang login.
  * Memunculkan banner notifikasi real-time & bunyi setiap kali penjual mengubah status
@@ -62,6 +52,7 @@ export function OrderStatusNotifier({ userId }: { userId: string }) {
   const [notice, setNotice] = useState<ToastNotice | null>(null);
 
   useEffect(() => {
+    void registerServiceWorker();
     const supabase = createClient();
     const channel = supabase
       .channel(`notifikasi-pembeli-${userId}`)
@@ -104,7 +95,12 @@ export function OrderStatusNotifier({ userId }: { userId: string }) {
 
           setNotice({ id: row.id, kode, status, message });
           playBuyerChime(status === "siap_diambil");
-          sendBrowserNotif(`Status Pesanan · ${label}`, message);
+          void showSystemNotification({
+            title: `Status Pesanan · ${label}`,
+            body: message,
+            url: "/pesanan",
+            tag: `filkom-lapar-order-${row.id}`,
+          });
         },
       )
       .subscribe();

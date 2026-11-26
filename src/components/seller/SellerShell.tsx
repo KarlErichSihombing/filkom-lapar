@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { LogoutButton } from "@/components/LogoutButton";
+import { PwaControlPill } from "@/components/PwaControlPill";
 import { useStandStatus } from "@/components/seller/StandStatus";
 import { BarChart, MapPin, ShoppingBag, Utensils } from "@/components/ui/icons";
 import { pad2 } from "@/lib/format";
@@ -170,7 +171,8 @@ export function SellerShell({
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <PwaControlPill targetUrl="/dashboard/pesanan" roleLabel="penjual" />
             <div className="text-right text-xs leading-tight">
               <p className="font-semibold">{displayName}</p>
               <p className="font-label text-[10px] uppercase tracking-wider text-on-surface-muted">

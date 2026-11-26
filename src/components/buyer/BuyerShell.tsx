@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BuyerNav } from "@/components/buyer/BuyerNav";
 import { OrderStatusNotifier } from "@/components/buyer/OrderStatusNotifier";
 import { LogoutButton } from "@/components/LogoutButton";
+import { PwaControlPill } from "@/components/PwaControlPill";
 
 function initialsOf(name: string) {
   return (
@@ -34,7 +35,8 @@ export function BuyerShell({
         >
           FILKOM Lapar
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <PwaControlPill targetUrl="/pesanan" roleLabel="pembeli" />
           {nama && <span className="hidden text-sm font-medium sm:block">{nama}</span>}
           <span
             aria-hidden
