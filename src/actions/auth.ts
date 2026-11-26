@@ -1,12 +1,18 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { homeForRole } from "@/lib/roles";
+import { homeForRole, type Role } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const ROLE_LABEL: Record<Role, string> = {
+  pembeli: "Mahasiswa / Pembeli",
+  penjual: "Penjual Stand",
+  admin: "Admin Kantin",
+};
 
 export async function login(
   _prev: AuthState,
@@ -14,6 +20,7 @@ export async function login(
 ): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const expectedRole = String(formData.get("expected_role") ?? "").trim() as Role | "";
 
   if (!email || !password) {
     return { error: "Email dan kata sandi wajib diisi." };
@@ -31,14 +38,27 @@ export async function login(
     return { error: "Email atau kata sandi salah." };
   }
 
-  // Peran dibaca dari database, bukan dari pilihan pengguna.
+  // Peran dibaca dari database dan dicocokkan dengan tab peran yang dipilih pengguna.
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", data.user.id)
     .single();
 
-  redirect(homeForRole(profile?.role));
+  const actualRole: Role = (profile?.role as Role | undefined) ?? "pembeli";
+
+  if (
+    expectedRole &&
+    ["pembeli", "penjual", "admin"].includes(expectedRole) &&
+    actualRole !== expectedRole
+  ) {
+    await supabase.auth.signOut();
+    return {
+      error: `Akun ini terdaftar sebagai ${ROLE_LABEL[actualRole]}, bukan ${ROLE_LABEL[expectedRole]}. Silakan pilih peran "${ROLE_LABEL[actualRole]}" di atas.`,
+    };
+  }
+
+  redirect(homeForRole(actualRole));
 }
 
 export async function register(

@@ -7,16 +7,52 @@ import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { ArrowRight, AtSign, ShieldCheck, Store } from "@/components/ui/icons";
+import type { Role } from "@/lib/roles";
 
 const initial: AuthState = {};
 
+const ROLE_CONFIG: Record<
+  Role,
+  {
+    buttonLabel: string;
+    fieldLabel: string;
+    placeholder: string;
+    badge: string;
+    submitText: string;
+  }
+> = {
+  pembeli: {
+    buttonLabel: "Mahasiswa / Tamu",
+    fieldLabel: "Email Mahasiswa UB / NIM",
+    placeholder: "farhan@student.ub.ac.id atau 21515020...",
+    badge: "@student.ub.ac.id",
+    submitText: "Masuk sebagai Pembeli",
+  },
+  penjual: {
+    buttonLabel: "Penjual Stand",
+    fieldLabel: "Email Akun Penjual Stand",
+    placeholder: "stand01@filkom.ub.ac.id",
+    badge: "Merchant GKM",
+    submitText: "Masuk ke Portal Penjual",
+  },
+  admin: {
+    buttonLabel: "Admin Kantin",
+    fieldLabel: "Email Pengelola / Admin Kantin",
+    placeholder: "admin@filkom.ub.ac.id",
+    badge: "Administrator",
+    submitText: "Masuk ke Portal Admin",
+  },
+};
+
 export default function LoginPage() {
   const [state, action, pending] = useActionState(login, initial);
-  const [roleTab, setRoleTab] = useState<"mahasiswa" | "penjual">("mahasiswa");
+  const [roleTab, setRoleTab] = useState<Role>("pembeli");
+
+  const activeConfig = ROLE_CONFIG[roleTab];
 
   return (
     <AuthCard active="login" eyebrow="Portal Masuk" title="Selamat Datang">
-      {/* Pilihan Peran Akun */}
+      {/* Pilihan Peran Akun (Pembeli, Penjual Stand, Admin Kantin) */}
       <div className="mb-4">
         <p className="mb-2 font-label text-[10px] font-bold uppercase tracking-wider text-on-surface-muted">
           Pilih Peran Akun Anda
@@ -24,23 +60,23 @@ export default function LoginPage() {
         <div
           role="radiogroup"
           aria-label="Pilih peran akun"
-          className="grid grid-cols-2 gap-2"
+          className="grid grid-cols-3 gap-1.5"
         >
           <button
             type="button"
             role="radio"
-            aria-checked={roleTab === "mahasiswa"}
-            onClick={() => setRoleTab("mahasiswa")}
-            className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 font-label text-xs font-semibold transition-all ${
-              roleTab === "mahasiswa"
+            aria-checked={roleTab === "pembeli"}
+            onClick={() => setRoleTab("pembeli")}
+            className={`flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 font-label text-[11px] font-semibold transition-all ${
+              roleTab === "pembeli"
                 ? "bg-white text-on-surface shadow-sm ring-1 ring-primary-strong/30"
                 : "bg-surface text-on-surface-muted hover:bg-surface-variant"
             }`}
           >
             <svg
               viewBox="0 0 24 24"
-              className={`size-4 ${
-                roleTab === "mahasiswa" ? "text-primary-strong" : "text-on-surface-muted"
+              className={`size-3.5 shrink-0 ${
+                roleTab === "pembeli" ? "text-primary-strong" : "text-on-surface-muted"
               }`}
               fill="none"
               stroke="currentColor"
@@ -52,7 +88,7 @@ export default function LoginPage() {
               <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
-            Mahasiswa / Tamu
+            <span className="truncate">Pembeli</span>
           </button>
 
           <button
@@ -60,37 +96,54 @@ export default function LoginPage() {
             role="radio"
             aria-checked={roleTab === "penjual"}
             onClick={() => setRoleTab("penjual")}
-            className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 font-label text-xs font-semibold transition-all ${
+            className={`flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 font-label text-[11px] font-semibold transition-all ${
               roleTab === "penjual"
                 ? "bg-white text-on-surface shadow-sm ring-1 ring-primary-strong/30"
                 : "bg-surface text-on-surface-muted hover:bg-surface-variant"
             }`}
           >
             <Store
-              className={`size-4 ${
+              className={`size-3.5 shrink-0 ${
                 roleTab === "penjual" ? "text-primary-strong" : "text-on-surface-muted"
               }`}
             />
-            Penjual Stand
+            <span className="truncate">Penjual Stand</span>
+          </button>
+
+          <button
+            type="button"
+            role="radio"
+            aria-checked={roleTab === "admin"}
+            onClick={() => setRoleTab("admin")}
+            className={`flex items-center justify-center gap-1.5 rounded-2xl px-2.5 py-2.5 font-label text-[11px] font-semibold transition-all ${
+              roleTab === "admin"
+                ? "bg-white text-on-surface shadow-sm ring-1 ring-primary-strong/30"
+                : "bg-surface text-on-surface-muted hover:bg-surface-variant"
+            }`}
+          >
+            <ShieldCheck
+              className={`size-3.5 shrink-0 ${
+                roleTab === "admin" ? "text-primary-strong" : "text-on-surface-muted"
+              }`}
+            />
+            <span className="truncate">Admin</span>
           </button>
         </div>
       </div>
 
       <form action={action} className="space-y-4">
+        <input type="hidden" name="expected_role" value={roleTab} />
+
         <Field
-          label={roleTab === "mahasiswa" ? "Email Mahasiswa UB / NIM" : "Email Akun Penjual Stand"}
+          label={activeConfig.fieldLabel}
           name="email"
           type="email"
           autoComplete="email"
-          placeholder={
-            roleTab === "mahasiswa"
-              ? "farhan@student.ub.ac.id atau 21515020..."
-              : "stand01@filkom.ub.ac.id"
-          }
+          placeholder={activeConfig.placeholder}
           icon={<AtSign className="size-4" />}
           labelRight={
             <span className="rounded-full bg-secondary-container px-2.5 py-0.5 font-label text-[10px] font-semibold text-secondary">
-              {roleTab === "mahasiswa" ? "@student.ub.ac.id" : "Merchant"}
+              {activeConfig.badge}
             </span>
           }
           required
@@ -135,7 +188,7 @@ export default function LoginPage() {
             "Memproses..."
           ) : (
             <>
-              Masuk ke FILKOM Lapar <ArrowRight className="size-4" />
+              {activeConfig.submitText} <ArrowRight className="size-4" />
             </>
           )}
         </Button>
